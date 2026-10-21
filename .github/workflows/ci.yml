@@ -1,0 +1,89 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }} - Node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+
+      - name: Pre-install Neovim (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y neovim
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Code style & formatting check
+        run: npm run format:check
+
+      - name: ESLint static analysis
+        run: npm run lint
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run Vitest test suite
+        run: npm test
+
+      - name: Build distribution bundles
+        run: npm run build
+
+      - name: NPM Production Dependency Audit (Blocking)
+        if: runner.os == 'Linux' && matrix.node == 22
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: NPM Full Dependency Audit (Informational)
+        if: runner.os == 'Linux' && matrix.node == 22
+        run: npm audit || true
+
+      - name: Semgrep Security SAST Scan
+        if: runner.os == 'Linux' && matrix.node == 22
+        run: docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:latest semgrep scan --config=auto src/
+
+      - name: Trivy Vulnerability & Secret Scan
+        if: runner.os == 'Linux' && matrix.node == 22
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'src'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Gitleaks Secret Scan
+        if: runner.os == 'Linux' && matrix.node == 22
+        uses: gitleaks/gitleaks-action@f586c14365d4643c6aa59d472ae6e984bf47bb34 # v2.3.8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

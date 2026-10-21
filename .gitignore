@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.banyanrc.json
+*.log
+.DS_Store
+Thumbs.db
+*.zip
+.linear.toml
+NPM_PUBLISH_GUIDE.md
+
+# Versioned release archives (e.g. banyan-cli-v1.2.0.zip)
+*-v*.*.*.zip
+*.*.*.zip

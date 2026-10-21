@@ -1,0 +1,33 @@
+{
+  "$schema": "https://banyan.dev/schema/v1.json",
+  "defaultWorkspace": "acme-ecosystem",
+  "theme": "catppuccin",
+  "lang": "es",
+  "workspaces": {
+    "acme-ecosystem": {
+      "root": "..",
+      "theme": "catppuccin",
+      "lang": "es",
+      "discoverSubdirs": true,
+      "repos": [
+        { "alias": "app", "path": "./web-app" },
+        { "alias": "common", "path": "./shared-ui" },
+        { "alias": "engine", "path": "./core-service" }
+      ],
+      "adapters": {
+        "node": {
+          "enabled": "auto",
+          "highlightScopes": ["@acme"]
+        },
+        "python": { "enabled": "auto" },
+        "go": { "enabled": "auto" },
+        "rust": { "enabled": "auto" },
+        "dotnet": { "enabled": "auto" }
+      },
+      "agentDetection": {
+        "lockFiles": [".aider*", ".claude*", ".cursor*"],
+        "recentModifiedThresholdSec": 45
+      }
+    }
+  }
+}
