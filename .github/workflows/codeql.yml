@@ -1,12 +1,9 @@
 name: "CodeQL Analysis"
 
+# GitHub-hosted only: on a private repo without paid Actions and Advanced
+# Security it cannot run, so it is launched by hand.
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
-  schedule:
-    - cron: '30 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
