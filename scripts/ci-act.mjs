@@ -139,10 +139,32 @@ if (!run('git', ['-C', tree, 'checkout', '--quiet', '--detach', sha]).ok) {
   fail(`${short} is on no branch of this repo: commit it on a branch first`)
 }
 
+// act's own workflow_dispatch payload is empty; actions that read the repo from
+// it (gitleaks: repository.owner.login) need what GitHub would send
+const repo = slug()
+const branch = run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD']).out || 'main'
+const eventFile = join(resultsDir, `${sha}.event.json`)
+writeFileSync(
+  eventFile,
+  JSON.stringify({
+    ref: `refs/heads/${branch}`,
+    inputs: {},
+    ...(repo && {
+      repository: {
+        name: repo.split('/')[1],
+        full_name: repo,
+        owner: { login: repo.split('/')[0] },
+      },
+    }),
+  }),
+)
+
 const token = run('gh', ['auth', 'token']).out
 const secretNames = ['GITHUB_TOKEN', ...(config.secrets ?? [])]
 const actArgs = [
   EVENT,
+  '-e',
+  eventFile,
   '-W',
   `.github/workflows/${workflow}`,
   '-P',
