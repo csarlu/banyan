@@ -4,7 +4,7 @@
 
 ### **Git worktrees isolate your code. Banyan isolates your dependencies.**
 
-*The real-time TUI & MCP Control Plane for parallel AI coding agents across polyglot monorepos and multi-repo worktrees.*
+*The real-time TUI & MCP Control Plane for parallel AI coding agents across polyglot multi-repo workspaces and Git worktrees.*
 
 [![Continuous Integration](https://github.com/csarlu/banyan/actions/workflows/ci.yml/badge.svg)](https://github.com/csarlu/banyan/actions/workflows/ci.yml)
 [![npm package](https://img.shields.io/npm/v/@csarlu/banyan.svg?label=npm%20package&logo=npm&logoColor=white)](https://www.npmjs.com/package/@csarlu/banyan)
