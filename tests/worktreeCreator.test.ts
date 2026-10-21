@@ -31,7 +31,9 @@ describe('In-TUI Worktree Creation Wizard (BAN-6)', () => {
   afterAll(async () => {
     try {
       await fs.rm(tempDir, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // Ignore cleanup errors on locked temporary files
+    }
   })
 
   it('creates a new clean Git worktree with -b branch', async () => {

@@ -47,7 +47,9 @@ export async function createDirLink(target: string, destination: string): Promis
     await fs.mkdir(path.dirname(destination), { recursive: true })
     try {
       await fs.rm(destination, { recursive: true, force: true })
-    } catch {}
+    } catch {
+      // Ignore if destination does not exist yet
+    }
 
     const type = process.platform === 'win32' ? 'junction' : 'dir'
     await fs.symlink(target, destination, type)
