@@ -7,15 +7,10 @@
 *The real-time TUI & MCP Control Plane for parallel AI coding agents across polyglot monorepos and multi-repo worktrees.*
 
 [![Continuous Integration](https://github.com/csarlu/banyan/actions/workflows/ci.yml/badge.svg)](https://github.com/csarlu/banyan/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@csarlu/banyan.svg?logo=npm&logoColor=white)](https://www.npmjs.com/package/@csarlu/banyan)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![npm package](https://img.shields.io/npm/v/@csarlu/banyan.svg?label=npm%20package&logo=npm&logoColor=white)](https://www.npmjs.com/package/@csarlu/banyan)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MCP Server](https://img.shields.io/badge/MCP-stdio%20server-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-<br>
-[![Platform Support](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg?logo=linux&logoColor=white)](https://github.com/csarlu/banyan)
-[![MCP Server](https://img.shields.io/badge/MCP-Claude%20Code%20%7C%20Codex%20%7C%20AGY%20%7C%20Cursor-8A2BE2.svg)](https://modelcontextprotocol.io)
-[![Polyglot](https://img.shields.io/badge/polyglot-Node%20%7C%20Python%20%7C%20Go%20%7C%20Rust%20%7C%20.NET-informational.svg)](#polyglot-ecosystem-adapters)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 </div>
 
