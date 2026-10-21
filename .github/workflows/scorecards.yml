@@ -1,11 +1,9 @@
 name: OpenSSF Scorecard
 
+# GitHub-hosted only: on a private repo without paid Actions and Advanced
+# Security it cannot run, so it is launched by hand.
 on:
-  branch_protection_rule:
-  schedule:
-    - cron: '15 3 * * 1'
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions: read-all
 
