@@ -137,7 +137,9 @@ if (git('status', '--porcelain')) {
 
 mkdirSync(resultsDir, { recursive: true })
 const tree = join(tmpdir(), `ci-act-${short}-${process.pid}`)
-git('clone', '--quiet', '--no-checkout', root, tree)
+// As GitHub's Linux checkout leaves them: Git for Windows turns LF into CRLF on
+// checkout (core.autocrlf), and a repo without eol attributes then fails Prettier
+git('clone', '--quiet', '--no-checkout', '-c', 'core.autocrlf=false', root, tree)
 if (!run('git', ['-C', tree, 'checkout', '--quiet', '--detach', sha]).ok) {
   rmSync(tree, { recursive: true, force: true })
   fail(`${short} is on no branch of this repo: commit it on a branch first`)
