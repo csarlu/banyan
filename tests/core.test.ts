@@ -459,14 +459,21 @@ describe('Agent Self-Awareness Briefing', () => {
 describe('Config Management & Editor Integration', () => {
   it('detects editor with preference for nvim / environment variable or valid system fallback', async () => {
     const { detectEditor } = await import('../src/core/configEditor.js')
-    const editor = detectEditor()
-    expect(typeof editor).toBe('string')
-    expect(editor.length).toBeGreaterThan(0)
-    // In CI environments without nvim pre-installed, falls back to vim, nano, vi, code, or notepad
-    expect(['nvim', 'vim', 'nano', 'vi', 'code', 'notepad']).toContain(editor)
-
     const prevBanyanEditor = process.env.BANYAN_EDITOR
+    const prevEditor = process.env.EDITOR
     try {
+      // Isolate from the host environment: CI runners may export EDITOR (e.g. notepad.exe on Windows)
+      delete process.env.BANYAN_EDITOR
+      delete process.env.EDITOR
+      const editor = detectEditor()
+      expect(typeof editor).toBe('string')
+      expect(editor.length).toBeGreaterThan(0)
+      // In CI environments without nvim pre-installed, falls back to vim, nano, vi, code, or notepad
+      expect(['nvim', 'vim', 'nano', 'vi', 'code', 'notepad']).toContain(editor)
+
+      process.env.EDITOR = 'env-editor'
+      expect(['nvim', 'env-editor']).toContain(detectEditor())
+
       process.env.BANYAN_EDITOR = 'custom-vim'
       expect(detectEditor()).toBe('custom-vim')
     } finally {
@@ -474,6 +481,11 @@ describe('Config Management & Editor Integration', () => {
         process.env.BANYAN_EDITOR = prevBanyanEditor
       } else {
         delete process.env.BANYAN_EDITOR
+      }
+      if (prevEditor !== undefined) {
+        process.env.EDITOR = prevEditor
+      } else {
+        delete process.env.EDITOR
       }
     }
   })
