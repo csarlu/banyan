@@ -1,6 +1,6 @@
-﻿version: 2
+version: 2
 updates:
-  # Maintain npm dependencies
+  # Maintain npm dependencies (patch/minor automatically; major upgrades are handled manually)
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -11,19 +11,8 @@ updates:
         dependency-type: "development"
         patterns:
           - "*"
-    # Runtime majors (ink/react/chalk/meow/zod) are breaking: upgrade them manually.
     ignore:
-      - dependency-name: "ink"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@types/react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "chalk"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "meow"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "zod"
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   # Maintain GitHub Actions dependencies
