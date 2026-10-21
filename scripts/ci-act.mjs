@@ -19,6 +19,8 @@
  *   workflow  file in .github/workflows              (default "ci.yml")
  *   matrix    act --matrix filters, e.g. ["os:ubuntu-latest"]
  *   secrets   names act gets from `gh auth token`, besides GITHUB_TOKEN
+ *   env       variables set only in the local run, e.g. to turn off an
+ *             upload to GitHub that has no meaning outside it
  *
  * Needs act, Docker and an authenticated gh. Results and logs: .git/ci-act/.
  */
@@ -176,6 +178,7 @@ const actArgs = [
   '--use-new-action-cache',
   ...secretNames.flatMap((s) => ['-s', s]),
   ...(config.matrix ?? []).flatMap((m) => ['--matrix', m]),
+  ...Object.entries(config.env ?? {}).flatMap(([k, v]) => ['--env', `${k}=${v}`]),
   ...(job ? ['-j', job] : []),
 ]
 

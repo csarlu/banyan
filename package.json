@@ -41,7 +41,10 @@
     "ci:act": "node scripts/ci-act.mjs"
   },
   "ciAct": {
-    "matrix": ["os:ubuntu-latest"]
+    "matrix": ["os:ubuntu-latest"],
+    "env": {
+      "GITLEAKS_ENABLE_UPLOAD_ARTIFACT": "false"
+    }
   },
   "keywords": [
     "git",
