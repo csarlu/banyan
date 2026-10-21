@@ -9,6 +9,8 @@
  *   npm run ci:act -- --report     report the kept result of HEAD (after a push)
  *   npm run ci:act -- --sha <rev>  another commit
  *   npm run ci:act -- --job <id>   one job only (not reported: it is not the whole workflow)
+ *   npm run ci:act -- --workflow <file>  another workflow in .github/workflows; its
+ *                                  result is reported as its own status
  *
  * Only committed work is tested: the commit is checked out into a temporary
  * clone, so what passes is exactly what gets pushed. A clone, not a worktree:
@@ -63,13 +65,13 @@ const fail = (msg) => {
 
 const root = git('rev-parse', '--show-toplevel')
 const config = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).ciAct ?? {}
-const workflow = config.workflow ?? 'ci.yml'
+const workflow = option('workflow') ?? config.workflow ?? 'ci.yml'
 const sha = git('rev-parse', `${option('sha') ?? 'HEAD'}^{commit}`)
 const short = sha.slice(0, 7)
 const job = option('job')
 const resultsDir = join(git('rev-parse', '--git-common-dir'), 'ci-act')
-const resultFile = join(resultsDir, `${sha}.json`)
-const logFile = join(resultsDir, `${sha}.log`)
+const resultFile = join(resultsDir, `${sha}.${workflow}.json`)
+const logFile = join(resultsDir, `${sha}.${workflow}.log`)
 const context = `ci/act (${workflow})`
 
 /** owner/repo on GitHub, or null when gh cannot tell. */
@@ -145,7 +147,7 @@ if (!run('git', ['-C', tree, 'checkout', '--quiet', '--detach', sha]).ok) {
 // it (gitleaks: repository.owner.login) need what GitHub would send
 const repo = slug()
 const branch = run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD']).out || 'main'
-const eventFile = join(resultsDir, `${sha}.event.json`)
+const eventFile = join(resultsDir, `${sha}.${workflow}.event.json`)
 writeFileSync(
   eventFile,
   JSON.stringify({
