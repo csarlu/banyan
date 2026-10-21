@@ -4,8 +4,8 @@
   "description": "Polyglot Agentic Git Worktree & Local Dependency Control Plane TUI (Node, Python, Go, Rust, .NET)",
   "type": "module",
   "bin": {
-    "bny": "./dist/cli.js",
-    "banyan-bin": "./dist/cli.js"
+    "bny": "dist/cli.js",
+    "banyan-bin": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/csarlu/banyan.git"
+    "url": "git+https://github.com/csarlu/banyan.git"
   },
   "homepage": "https://github.com/csarlu/banyan#readme",
   "bugs": {
