@@ -1,6 +1,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import { BanyanConfig, WorkspaceConfig } from '../../core/types.js'
+import { BanyanConfig, EcosystemSnapshot, WorkspaceConfig } from '../../core/types.js'
 import { ThemePalette } from '../theme.js'
 import { DICTIONARIES, Locale } from '../../i18n/index.js'
 import { readConfigFileRaw } from '../../core/configEditor.js'
@@ -17,6 +17,7 @@ interface Props {
   locale: Locale
   isMuxActive?: boolean
   isNarrow?: boolean
+  snapshot?: EcosystemSnapshot | null
 }
 
 export const ConfigTab: React.FC<Props> = ({
@@ -30,6 +31,7 @@ export const ConfigTab: React.FC<Props> = ({
   locale,
   isMuxActive = false,
   isNarrow = false,
+  snapshot,
 }) => {
   const t = DICTIONARIES[locale].cfgTab
 
@@ -156,16 +158,27 @@ export const ConfigTab: React.FC<Props> = ({
               Auto-discovered from subdirectories
             </Text>
           ) : (
-            workspaceConfig.repos.slice(0, 4).map((r) => (
-              <Box key={r.alias} width="100%" overflow="hidden">
-                <Text wrap="truncate-end">
-                  <Text color={theme.accent} bold>
-                    • {r.alias}:{' '}
+            workspaceConfig.repos.slice(0, 4).map((r) => {
+              const isMissing = snapshot?.missingRepos?.some(
+                (m) => m.alias === r.alias || m.path === r.path,
+              )
+              return (
+                <Box key={r.alias} width="100%" overflow="hidden">
+                  <Text wrap="truncate-end">
+                    <Text color={isMissing ? theme.warning : theme.accent} bold>
+                      • {r.alias}:{' '}
+                    </Text>
+                    <Text color={theme.text}>{r.path}</Text>
+                    {isMissing && (
+                      <Text color={theme.critical} bold>
+                        {' '}
+                        [{locale === 'es' ? 'NO ENCONTRADO' : 'NOT FOUND'}]
+                      </Text>
+                    )}
                   </Text>
-                  <Text color={theme.text}>{r.path}</Text>
-                </Text>
-              </Box>
-            ))
+                </Box>
+              )
+            })
           )}
           {workspaceConfig.repos.length > 4 && (
             <Text color={theme.muted} wrap="truncate-end">

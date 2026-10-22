@@ -10,6 +10,7 @@ export type DocTopicId =
   | 'BROKEN_LINK'
   | 'SHARED_ENV_DIRTY'
   | 'EXTERNAL_TARGET'
+  | 'MISSING_REPO'
 
 export const DOC_TOPICS: DocTopicId[] = [
   'concepts',
@@ -21,6 +22,7 @@ export const DOC_TOPICS: DocTopicId[] = [
   'BROKEN_LINK',
   'SHARED_ENV_DIRTY',
   'EXTERNAL_TARGET',
+  'MISSING_REPO',
 ]
 
 export interface PedagogicalArticle {
@@ -204,6 +206,23 @@ export const KNOWLEDGE_BASE: Record<Locale, Record<DocTopicId, PedagogicalArticl
         'Añade la ruta de ese repositorio a la lista "repos" de tu archivo banyan.config.json para que entre en el radar.',
       ],
     },
+    MISSING_REPO: {
+      id: 'MISSING_REPO',
+      code: 'WARN-CONFIG-01',
+      title: 'Repositorio Configurado No Encontrado (MISSING_REPO)',
+      tlDr: 'Un proyecto listado en la configuración (banyan.config.json o .banyanrc.json) no existe en disco o no contiene un repositorio Git válido.',
+      analogy:
+        'Una dirección postal en tu libreta de contactos que ha sido demolida o renombrada; las cartas devueltas alertan de que la ubicación ya no es válida.',
+      diagram: [
+        '  banyan.config.json: { "path": "./mi-proyecto" } ──▶ ❌ [Ruta inexistente en disco]',
+      ],
+      whyItMattersForAgents: [
+        'Los agentes IA y Banyan no pueden monitorear dependencias, branches ni worktrees de un repositorio que ha sido movido, renombrado o borrado.',
+      ],
+      howToFix: [
+        'Abre la configuración con "bny --config" y corrige la ruta del repositorio para que apunte a la carpeta real del proyecto en disco.',
+      ],
+    },
   },
   en: {
     concepts: {
@@ -365,6 +384,21 @@ export const KNOWLEDGE_BASE: Record<Locale, Record<DocTopicId, PedagogicalArticl
         'Banyan cannot warn you if that external folder has uncommitted changes or branch mismatches.',
       ],
       howToFix: ['Add that repository path to your banyan.config.json "repos" list.'],
+    },
+    MISSING_REPO: {
+      id: 'MISSING_REPO',
+      code: 'WARN-CONFIG-01',
+      title: 'Missing Configured Repository (MISSING_REPO)',
+      tlDr: 'A project declared in your configuration (banyan.config.json or .banyanrc.json) does not exist on disk or is not a valid Git repository.',
+      analogy:
+        'A postal address in your address book that was demolished or renamed; returned mail alerts you that the location is obsolete.',
+      diagram: ['  banyan.config.json: { "path": "./my-project" } ──▶ ❌ [Nonexistent disk path]'],
+      whyItMattersForAgents: [
+        'AI agents and Banyan cannot inspect dependencies, branches, or worktrees of a repository that has been moved, renamed, or deleted.',
+      ],
+      howToFix: [
+        'Open your configuration using "bny --config" and update the repository path to point to the correct directory on disk.',
+      ],
     },
   },
 }

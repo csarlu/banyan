@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { EcosystemSnapshot, WorkspaceConfig } from './types.js'
+import { EcosystemSnapshot, MissingRepoInfo, WorkspaceConfig } from './types.js'
 import { scanAllWorktrees } from './git.js'
 import { scanAllJunctions } from './junctions.js'
 import { detectCollisions } from './collisions.js'
@@ -23,6 +23,28 @@ async function statMtimeSafe(targetPath: string): Promise<string> {
   }
 }
 
+async function isGitRepository(repoPath: string): Promise<boolean> {
+  try {
+    const st = await fs.stat(repoPath)
+    if (!st.isDirectory()) return false
+    try {
+      await fs.access(path.join(repoPath, '.git'))
+      return true
+    } catch {
+      // Could be bare repo or gitdir with HEAD and refs
+      try {
+        await fs.access(path.join(repoPath, 'HEAD'))
+        await fs.access(path.join(repoPath, 'refs'))
+        return true
+      } catch {
+        return false
+      }
+    }
+  } catch {
+    return false
+  }
+}
+
 /**
  * Computes a fast, zero-process filesystem fingerprint (pure Node.js fs.lstat/readdir,
  * 0 git.exe or psmux.exe child processes spawned) to detect whether any repository
@@ -36,7 +58,9 @@ async function computeWorkspaceFingerprint(
 
   for (const repo of workspaceConfig.repos) {
     const dotGit = path.join(repo.path, '.git')
-    parts.push(`repo:${repo.alias}:${await statMtimeSafe(dotGit)}`)
+    parts.push(
+      `repo:${repo.alias}:${await statMtimeSafe(dotGit)}:${await statMtimeSafe(repo.path)}`,
+    )
     parts.push(`head:${await statMtimeSafe(path.join(dotGit, 'HEAD'))}`)
     parts.push(`idx:${await statMtimeSafe(path.join(dotGit, 'index'))}`)
     parts.push(`lock:${await statMtimeSafe(path.join(dotGit, 'index.lock'))}`)
@@ -108,6 +132,23 @@ export async function buildEcosystemSnapshot(
   const junctions = await scanAllJunctions(worktrees, workspaceConfig)
   const warnings = detectCollisions(worktrees, junctions)
 
+  // Detect missing or non-existent configured repositories
+  const missingRepos: MissingRepoInfo[] = []
+  for (const repo of workspaceConfig.repos) {
+    if (!(await isGitRepository(repo.path))) {
+      missingRepos.push({ alias: repo.alias, path: repo.path })
+      warnings.push({
+        id: `missing-repo:${repo.alias}`,
+        severity: 'warning',
+        type: 'MISSING_REPO',
+        message: `Configured repository "${repo.alias}" at "${repo.path}" was not found or is not a git repository.`,
+        messageEs: `El repositorio configurado "${repo.alias}" en "${repo.path}" no fue encontrado en disco o no es un repositorio git válido.`,
+        affectedWorktreeIds: [repo.alias],
+        suggestedFixCommand: 'bny --config',
+      })
+    }
+  }
+
   const snapshot: EcosystemSnapshot = {
     workspaceName,
     timestamp: Date.now(),
@@ -115,6 +156,7 @@ export async function buildEcosystemSnapshot(
     worktrees,
     junctions,
     warnings,
+    missingRepos,
   }
 
   const fingerprint = await computeWorkspaceFingerprint(workspaceConfig, snapshot)
@@ -205,6 +247,17 @@ export function areSnapshotsEquivalent(
       return false
     }
   }
+
+  // Missing repos comparison
+  const aMissing = (a.missingRepos ?? [])
+    .map((m) => `${m.alias}:${m.path}`)
+    .sort()
+    .join(',')
+  const bMissing = (b.missingRepos ?? [])
+    .map((m) => `${m.alias}:${m.path}`)
+    .sort()
+    .join(',')
+  if (aMissing !== bMissing) return false
 
   return true
 }

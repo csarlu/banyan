@@ -817,6 +817,7 @@ export const App: React.FC<Props> = ({
               locale={locale}
               isMuxActive={isMuxActive}
               isNarrow={isNarrow}
+              snapshot={snapshot}
             />
           )}
         </>

@@ -591,4 +591,23 @@ describe('Config Management & Editor Integration', () => {
     expect(typeof openConfigInEditor).toBe('function')
     expect(typeof isInMuxSession).toBe('function')
   })
+
+  it('detects missing configured repositories and adds MISSING_REPO warnings', async () => {
+    const { buildEcosystemSnapshot } = await import('../src/core/orchestrator.js')
+    const snapshot = await buildEcosystemSnapshot('test-missing-ws', {
+      root: process.cwd(),
+      discoverSubdirs: false,
+      repos: [{ alias: 'nonexistent-project', path: './does-not-exist-at-all-12345' }],
+    })
+
+    expect(snapshot.missingRepos).toBeDefined()
+    expect(snapshot.missingRepos).toHaveLength(1)
+    expect(snapshot.missingRepos![0].alias).toBe('nonexistent-project')
+
+    const missingWarn = snapshot.warnings.find((w) => w.type === 'MISSING_REPO')
+    expect(missingWarn).toBeDefined()
+    expect(missingWarn?.severity).toBe('warning')
+    expect(missingWarn?.affectedWorktreeIds).toContain('nonexistent-project')
+    expect(missingWarn?.messageEs).toContain('nonexistent-project')
+  })
 })

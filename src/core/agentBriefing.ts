@@ -168,10 +168,10 @@ export const AGENT_RULES_SNIPPET = `
 ## 🤖 Banyan Multi-Agent Worktree & Junction Protocol
 Before running builds, installing packages, or debugging cross-package issues, run:
 \`\`\`bash
-banyan-bin --agent-context
+bny --agent-context
 \`\`\`
 1. **Check your Blast Radius:** Verify if your current worktree has a \`shared\` \`node_modules\` or if other active agents consume your worktree via junctions.
 2. **Respect Guardrails:** Never run \`npm install\` inside a worktree with \`nodeModulesType: shared\`.
-3. **Branch Alignment:** If \`banyan-bin --agent-context\` reports a \`BRANCH_MISMATCH\` or \`BROKEN_LINK\`, apply or suggest the provided fix command before wasting tokens debugging stale builds.
+3. **Branch Alignment:** If \`bny --agent-context\` reports a \`BRANCH_MISMATCH\`, \`BROKEN_LINK\`, or \`MISSING_REPO\`, apply or suggest the provided fix command before wasting tokens debugging stale builds.
 <!-- BANYAN-AGENT-RULES-END -->
 `.trim()

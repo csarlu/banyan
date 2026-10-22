@@ -125,6 +125,7 @@ export type CollisionType =
   | 'SHARED_NM_DIRTY'
   | 'SHARED_ENV_DIRTY'
   | 'EXTERNAL_TARGET'
+  | 'MISSING_REPO'
 
 export interface CollisionWarning {
   id: string
@@ -138,6 +139,11 @@ export interface CollisionWarning {
   suggestedFixCommand?: string
 }
 
+export interface MissingRepoInfo {
+  alias: string
+  path: string
+}
+
 export interface EcosystemSnapshot {
   workspaceName: string
   timestamp: number
@@ -145,4 +151,5 @@ export interface EcosystemSnapshot {
   worktrees: WorktreeNode[]
   junctions: JunctionLink[]
   warnings: CollisionWarning[]
+  missingRepos?: MissingRepoInfo[]
 }

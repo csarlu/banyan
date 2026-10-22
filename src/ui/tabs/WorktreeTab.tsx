@@ -1,4 +1,5 @@
 import React from 'react'
+import path from 'node:path'
 import { Box, Text } from 'ink'
 import { EcosystemSnapshot, WorktreeNode } from '../../core/types.js'
 import {
@@ -82,9 +83,11 @@ export const WorktreeTab: React.FC<Props> = ({
   // Dynamic window calculation for viewport virtualization (reserving headroom for multi-repo group headers)
   const searchBarHeight = isSearchActive || searchQuery ? 2 : 0
   const expandExtraRows = expandNames ? 2 : 0
+  const missingBannerRows =
+    (snapshot.missingRepos?.length ?? 0) > 0 ? Math.min(3, snapshot.missingRepos!.length) : 0
   const maxRows = Math.max(
     4,
-    Math.floor((terminalRows - 13 - searchBarHeight - expandExtraRows) * 0.62),
+    Math.floor((terminalRows - 13 - searchBarHeight - expandExtraRows - missingBannerRows) * 0.62),
   )
   const { visibleItems, startIndex, endIndex } = computeVisibleWindow(
     worktrees,
@@ -216,6 +219,21 @@ export const WorktreeTab: React.FC<Props> = ({
               )}
             </Text>
           </Text>
+        )}
+
+        {/* Missing Configured Repositories Warning Banner */}
+        {snapshot.missingRepos && snapshot.missingRepos.length > 0 && (
+          <Box flexDirection="column" marginY={0}>
+            {snapshot.missingRepos.slice(0, 3).map((mr) => (
+              <Text key={mr.alias} color={theme.warning} bold wrap="truncate-end">
+                {fitCell(
+                  `${UI_ICONS.warning} ${locale === 'es' ? 'REPO NO ENCONTRADO' : 'MISSING REPO'}: [${mr.alias}] ${path.basename(mr.path)} (${locale === 'es' ? 'revisa banyan.config.json' : 'check banyan.config.json'})`,
+                  leftInner,
+                  'left',
+                )}
+              </Text>
+            ))}
+          </Box>
         )}
 
         {/* 3. Worktree Rows */}
