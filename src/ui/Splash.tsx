@@ -1,5 +1,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
+import { BANYAN_VERSION } from '../version.js'
 
 const CANOPY_LINES = [
   '                       %%%%%%..                        ',
@@ -82,7 +83,10 @@ export const BanyanSplash: React.FC<BanyanSplashProps> = ({
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={border} paddingX={2} paddingY={0}>
       <Box justifyContent="space-between" marginBottom={0}>
-        <Text color={muted}>[BANYAN v1.0.0{workspaceName ? ` · ws:${workspaceName}` : ''}]</Text>
+        <Text color={muted}>
+          [BANYAN v{BANYAN_VERSION}
+          {workspaceName ? ` · ws:${workspaceName}` : ''}]
+        </Text>
         <Text color={muted}>[uptime = {uptimeMs}ms]</Text>
       </Box>
 

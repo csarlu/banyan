@@ -32,8 +32,8 @@
              ╵  ╵  o ╵  │ │ ╵  o  ╵
 
  ▄▀▀▄ ▄▀▀▄ █▀▀▄ █  █ ▄▀▀▄ █▀▀▄
- █▀▀▄ █▀▀█ █  █ ▀▄▄▀ █▀▀█ █  █   v1.0.0 · Polyglot Worktree & Dependency
- ▀▀▀  ▀  ▀ ▀  ▀  ▀▀  ▀  ▀ ▀  ▀            Agentic Control Plane
+ █▀▀▄ █▀▀█ █  █ ▀▄▄▀ █▀▀█ █  █   Polyglot Worktree & Dependency
+ ▀▀▀  ▀  ▀ ▀  ▀  ▀▀  ▀  ▀ ▀  ▀   Agentic Control Plane
 ```
 
 ---

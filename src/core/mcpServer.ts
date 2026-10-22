@@ -3,6 +3,7 @@ import { loadConfig } from './config.js'
 import { buildEcosystemSnapshot } from './orchestrator.js'
 import { generateAgentBriefing } from './agentBriefing.js'
 import { executeFixCommand } from './fixRunner.js'
+import { BANYAN_VERSION } from '../version.js'
 
 export interface McpServerOptions {
   allowFix?: boolean
@@ -91,7 +92,7 @@ export async function handleMcpRequest(
         protocolVersion: '2024-11-05',
         serverInfo: {
           name: 'banyan-mcp-server',
-          version: '1.0.0',
+          version: BANYAN_VERSION,
         },
         capabilities: {
           tools: {},

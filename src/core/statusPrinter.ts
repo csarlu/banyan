@@ -1,4 +1,5 @@
 import { EcosystemSnapshot } from './types.js'
+import { BANYAN_VERSION } from '../version.js'
 import { Locale } from '../i18n/index.js'
 import { getMessages, localizeWarningMessage } from '../i18n/messages.js'
 import {
@@ -29,7 +30,7 @@ export function formatStatusReport(snapshot: EcosystemSnapshot, locale: Locale =
   const m = getMessages(locale).status
 
   lines.push(
-    `🌳 ${C.bold}${C.brightGreen}B A N Y A N${C.reset}  ${C.gray}v1.0.0 · [Workspace: ${snapshot.workspaceName}]${C.reset}`,
+    `🌳 ${C.bold}${C.brightGreen}B A N Y A N${C.reset}  ${C.gray}v${BANYAN_VERSION} · [Workspace: ${snapshot.workspaceName}]${C.reset}`,
   )
   lines.push(`   ${C.cyan}${m.subtitle}${C.reset}`)
   lines.push('')
