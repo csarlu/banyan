@@ -12,6 +12,8 @@ import { copyToClipboard } from '../core/clipboard.js'
 import { executeFixCommand } from '../core/fixRunner.js'
 import { createWorktreeWithStrategy } from '../core/worktreeCreator.js'
 import { getMuxBinaryName, openMuxSplit, openMuxWindow } from '../integrations/mux.js'
+import { muxInstallHint } from '../core/prerequisites.js'
+import { BANYAN_VERSION } from '../version.js'
 import { BanyanSplash } from './Splash.js'
 import { StatusBar } from './StatusBar.js'
 import { WorktreeTab } from './tabs/WorktreeTab.js'
@@ -153,6 +155,10 @@ export const App: React.FC<Props> = ({
   )
   const { write } = useStdout()
   const muxName = useMemo(() => getMuxBinaryName(), [])
+  const muxUnavailableMsg =
+    locale === 'es'
+      ? `⚠ ${muxName} no disponible. Instálalo con: ${muxInstallHint(process.platform)}`
+      : `⚠ ${muxName} unavailable. Install it with: ${muxInstallHint(process.platform)}`
   const isMuxActive = useMemo(() => Boolean(process.env.TMUX || process.env.TMUX_PANE), [])
 
   const handleOpenConfigEditor = useCallback(
@@ -544,13 +550,13 @@ export const App: React.FC<Props> = ({
         const chosen = worktrees[selectedIndex]
         if (chosen) {
           const ok = await openMuxSplit(chosen.worktreePath, 'h')
-          setStatusMessage(ok ? `Split ${muxName}: ${chosen.id}` : `${muxName} unavailable`)
+          setStatusMessage(ok ? `Split ${muxName}: ${chosen.id}` : muxUnavailableMsg)
         }
       } else if (input === 'w') {
         const chosen = worktrees[selectedIndex]
         if (chosen) {
           const ok = await openMuxWindow(chosen.worktreePath, chosen.id)
-          setStatusMessage(ok ? `Window ${muxName}: ${chosen.id}` : `${muxName} unavailable`)
+          setStatusMessage(ok ? `Window ${muxName}: ${chosen.id}` : muxUnavailableMsg)
         }
       } else if (input === 'x') {
         const chosen = worktrees[selectedIndex]
@@ -568,7 +574,7 @@ export const App: React.FC<Props> = ({
               ? locale === 'es'
                 ? `✔ Agente [${agentCmd}] lanzado en ${chosen.id}`
                 : `✔ Agent [${agentCmd}] launched in ${chosen.id}`
-              : `${muxName} unavailable`,
+              : muxUnavailableMsg,
           )
         }
       }
@@ -640,7 +646,7 @@ export const App: React.FC<Props> = ({
       >
         <Box gap={2} alignItems="center" flexShrink={0} marginRight={2}>
           <Text color={theme.primary} bold wrap="truncate-end">
-            {'\uf1bb'} B A N Y A N <Text color={theme.muted}>v1.0.0</Text>
+            {'\uf1bb'} B A N Y A N <Text color={theme.muted}>v{BANYAN_VERSION}</Text>
           </Text>
           {!isNarrow && (
             <Text color={theme.secondary} wrap="truncate-end">

@@ -20,7 +20,8 @@ import { loadConfig } from './core/config.js'
 import { buildEcosystemSnapshot } from './core/orchestrator.js'
 import { formatStatusReport } from './core/statusPrinter.js'
 import { generateAgentBriefing, AGENT_RULES_SNIPPET } from './core/agentBriefing.js'
-import { printExplainTopic, printDoctorReport } from './docs/cliDocPrinter.js'
+import { printExplainTopic, printDoctorReport, formatPrerequisites } from './docs/cliDocPrinter.js'
+import { checkGit, checkPrerequisites, gitInstallHint } from './core/prerequisites.js'
 import { openConfigInEditor } from './core/configEditor.js'
 import { startMcpServer } from './core/mcpServer.js'
 import { App } from './ui/App.js'
@@ -234,6 +235,16 @@ async function resolveLocaleSafe(baseCwd: string): Promise<Locale> {
   }
 }
 
+// Every git call swallows its errors, so a missing git binary would otherwise surface as an
+// empty, "healthy" workspace (and a false green from --guard). Fail loudly instead.
+async function ensureGitAvailable(baseCwd: string): Promise<void> {
+  const git = await checkGit()
+  if (git.ok) return
+  const cm = getMessages(await resolveLocaleSafe(baseCwd)).cli
+  process.stderr.write(cm.gitMissing(gitInstallHint()) + '\n')
+  process.exit(1)
+}
+
 async function main() {
   if (cli.flags.help) {
     cli.showHelp(0)
@@ -262,6 +273,7 @@ async function main() {
   }
 
   if (cli.flags.mcp) {
+    await ensureGitAvailable(baseCwd)
     await startMcpServer(baseCwd, { allowFix: Boolean(cli.flags.allowFix) })
     process.exit(0)
   }
@@ -303,6 +315,11 @@ async function main() {
       process.stderr.write(cm.rulesPresent(path.basename(targetFile)) + '\n')
     }
     process.exit(0)
+  }
+
+  // --doctor reports missing requirements itself instead of bailing out early.
+  if (!cli.flags.doctor) {
+    await ensureGitAvailable(baseCwd)
   }
 
   if (cli.flags.playground) {
@@ -365,8 +382,13 @@ async function main() {
   const locale = resolveLocale(workspace, rawConfig)
 
   if (cli.flags.doctor) {
+    const prerequisites = await checkPrerequisites()
+    if (prerequisites.some((p) => p.required && !p.ok)) {
+      process.stderr.write('\n' + formatPrerequisites(prerequisites, locale) + '\n\n')
+      process.exit(1)
+    }
     const snapshot = await buildEcosystemSnapshot(workspaceName, workspace)
-    process.stderr.write(printDoctorReport(snapshot, locale))
+    process.stderr.write(printDoctorReport(snapshot, locale, prerequisites))
     const hasCritical = snapshot.warnings.some((w) => w.severity === 'critical')
     process.exit(hasCritical ? 2 : 0)
   }

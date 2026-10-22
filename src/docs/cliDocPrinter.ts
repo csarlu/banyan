@@ -2,6 +2,7 @@ import { KNOWLEDGE_BASE, DocTopicId } from './knowledgeBase.js'
 import { Locale } from '../i18n/index.js'
 import { localizeWarningMessage } from '../i18n/messages.js'
 import { EcosystemSnapshot } from '../core/types.js'
+import { PrerequisiteCheck, PrerequisiteId } from '../core/prerequisites.js'
 
 const C = {
   reset: '\x1b[0m',
@@ -66,7 +67,60 @@ export function printExplainTopic(topicRaw: string, locale: Locale): string {
   return lines.join('\n')
 }
 
-export function printDoctorReport(snapshot: EcosystemSnapshot, locale: Locale): string {
+const PREREQ_IMPACT: Record<PrerequisiteId, { es: string; en: string }> = {
+  git: {
+    es: 'Sin git Banyan no puede leer worktrees, ramas ni estado: el análisis saldría vacío.',
+    en: 'Without git Banyan cannot read worktrees, branches or status: the audit would be empty.',
+  },
+  node: {
+    es: 'Banyan requiere Node.js 20 o superior.',
+    en: 'Banyan requires Node.js 20 or newer.',
+  },
+  mux: {
+    es: 'Opcional. Sin él no funcionan [s] / [w] / [a] ni la detección de agentes por panel (lockfiles y heartbeats siguen activos).',
+    en: 'Optional. Without it [s] / [w] / [a] and pane-based agent detection are unavailable (lockfiles and heartbeats still work).',
+  },
+  clipboard: {
+    es: 'Opcional. Sin él [y] no puede copiar rutas ni comandos al portapapeles.',
+    en: 'Optional. Without it [y] cannot copy paths or commands to the clipboard.',
+  },
+}
+
+/**
+ * Renders the system requirements block shared by `--doctor` and the startup git gate.
+ */
+export function formatPrerequisites(checks: PrerequisiteCheck[], locale: Locale): string {
+  const isEs = locale === 'es'
+  const lines: string[] = []
+  lines.push(`${C.bold}${isEs ? 'Requisitos del sistema' : 'System requirements'}${C.reset}`)
+
+  for (const check of checks) {
+    const icon = check.ok ? `${C.green}[✔]` : check.required ? `${C.red}[✖]` : `${C.yellow}[i]`
+    const status = check.ok
+      ? (check.version ?? (isEs ? 'disponible' : 'available'))
+      : isEs
+        ? 'no encontrado'
+        : 'not found'
+    lines.push(`${icon} ${check.label}:${C.reset} ${status}`)
+
+    if (!check.ok) {
+      lines.push(`    ${C.gray}${PREREQ_IMPACT[check.id][locale === 'es' ? 'es' : 'en']}${C.reset}`)
+      if (check.installHint) {
+        lines.push(
+          `    ${C.cyan}👉 ${isEs ? 'Instalar' : 'Install'}: ${check.installHint}${C.reset}`,
+        )
+      }
+    }
+  }
+
+  return lines.join('\n')
+}
+
+export function printDoctorReport(
+  snapshot: EcosystemSnapshot,
+  locale: Locale,
+  prerequisites?: PrerequisiteCheck[],
+): string {
   const lines: string[] = []
   const isEs = locale === 'es'
 
@@ -77,6 +131,11 @@ export function printDoctorReport(snapshot: EcosystemSnapshot, locale: Locale): 
     }${C.reset}`,
   )
   lines.push(`${C.gray}${'─'.repeat(80)}${C.reset}`)
+
+  if (prerequisites) {
+    lines.push(formatPrerequisites(prerequisites, locale))
+    lines.push(`${C.gray}${'─'.repeat(80)}${C.reset}`)
+  }
 
   // Check 1: Worktrees
   const wtCount = snapshot.worktrees.length

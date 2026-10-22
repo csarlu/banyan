@@ -42,6 +42,11 @@ export const MESSAGES = {
       playgroundDone: (dir: string) =>
         `\n✨ Playground session finished.\nDirectory preserved for inspection: ${dir}\n`,
       guardOk: '✅ Banyan Guard: Worktree isolated and healthy.',
+      gitMissing: (hint: string) =>
+        `❌ git was not found on your PATH.\n` +
+        `   Banyan needs git to read worktrees, branches and status; without it every report would be empty.\n` +
+        `   Install it: ${hint}\n` +
+        `   Run "bny --doctor" to review every requirement.`,
     },
     confirm: {
       press: 'Press',
@@ -87,6 +92,11 @@ export const MESSAGES = {
       playgroundDone: (dir: string) =>
         `\n✨ Sesión de Playground finalizada.\nDirectorio preservado para inspección: ${dir}\n`,
       guardOk: '✅ Banyan Guard: Worktree aislado y saludable.',
+      gitMissing: (hint: string) =>
+        `❌ No se encontró git en el PATH.\n` +
+        `   Banyan necesita git para leer worktrees, ramas y estado; sin él todos los informes saldrían vacíos.\n` +
+        `   Instálalo: ${hint}\n` +
+        `   Ejecuta "bny --doctor" para revisar todos los requisitos.`,
     },
     confirm: {
       press: 'Pulsa',

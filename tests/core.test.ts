@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
   parseWorktreePorcelain,
@@ -8,7 +9,18 @@ import { detectCollisions } from '../src/core/collisions.js'
 import { areSnapshotsEquivalent } from '../src/core/orchestrator.js'
 import { WorktreeNode, JunctionLink, EcosystemSnapshot } from '../src/core/types.js'
 import { KNOWLEDGE_BASE } from '../src/docs/knowledgeBase.js'
-import { printExplainTopic, printDoctorReport } from '../src/docs/cliDocPrinter.js'
+import {
+  printExplainTopic,
+  printDoctorReport,
+  formatPrerequisites,
+} from '../src/docs/cliDocPrinter.js'
+import {
+  PrerequisiteCheck,
+  checkGit,
+  checkNode,
+  gitInstallHint,
+  muxInstallHint,
+} from '../src/core/prerequisites.js'
 import { resolveCurrentWorktree, generateAgentBriefing } from '../src/core/agentBriefing.js'
 
 describe('Git Porcelain Parsers', () => {
@@ -296,6 +308,61 @@ describe('Pedagogical Knowledge Base & CLI Documentation', () => {
     expect(reportClean).toContain('BANYAN DOCTOR')
     expect(reportClean).toContain('Git Worktrees:')
     expect(reportClean).toContain('0 conflictos detectados')
+  })
+
+  it('includes the system requirements block in the doctor report when provided', () => {
+    const mockSnap = {
+      workspaceName: 'doc-test',
+      timestamp: Date.now(),
+      muxBackend: 'psmux' as const,
+      worktrees: [],
+      junctions: [],
+      warnings: [],
+    }
+    const prereqs: PrerequisiteCheck[] = [
+      { id: 'git', label: 'git', required: true, ok: true, version: 'git version 2.47.0' },
+      { id: 'mux', label: 'tmux', required: false, ok: false, installHint: 'brew install tmux' },
+    ]
+    const report = printDoctorReport(mockSnap, 'en', prereqs)
+    expect(report).toContain('System requirements')
+    expect(report).toContain('git version 2.47.0')
+    expect(report).toContain('Install: brew install tmux')
+  })
+})
+
+describe('System Prerequisites', () => {
+  it('flags Node versions below the supported minimum', () => {
+    expect(checkNode('18.20.4').ok).toBe(false)
+    expect(checkNode('20.0.0').ok).toBe(true)
+    expect(checkNode('22.11.0').ok).toBe(true)
+  })
+
+  it('suggests a platform-specific git install command', () => {
+    expect(gitInstallHint('win32')).toContain('winget')
+    expect(gitInstallHint('darwin')).toContain('brew')
+    expect(gitInstallHint('linux')).toContain('apt')
+  })
+
+  it('suggests a platform-specific multiplexer install command', () => {
+    expect(muxInstallHint('win32')).toBe('winget install --id marlocarlo.psmux -e')
+    expect(muxInstallHint('darwin')).toContain('tmux')
+  })
+
+  it('marks missing required tools as blocking with an install hint', () => {
+    const out = formatPrerequisites(
+      [{ id: 'git', label: 'git', required: true, ok: false, installHint: 'brew install git' }],
+      'es',
+    )
+    expect(out).toContain('Requisitos del sistema')
+    expect(out).toContain('[✖] git')
+    expect(out).toContain('no encontrado')
+    expect(out).toContain('Instalar: brew install git')
+  })
+
+  it('detects the git binary used by the test environment', async () => {
+    const git = await checkGit()
+    expect(git.ok).toBe(true)
+    expect(git.version).toMatch(/git version/)
   })
 })
 
@@ -609,5 +676,13 @@ describe('Config Management & Editor Integration', () => {
     expect(missingWarn?.severity).toBe('warning')
     expect(missingWarn?.affectedWorktreeIds).toContain('nonexistent-project')
     expect(missingWarn?.messageEs).toContain('nonexistent-project')
+  })
+})
+
+describe('Version', () => {
+  it('reads the displayed version from package.json', async () => {
+    const { BANYAN_VERSION } = await import('../src/version.js')
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    expect(BANYAN_VERSION).toBe(pkg.version)
   })
 })
