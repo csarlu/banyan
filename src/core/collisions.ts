@@ -80,7 +80,7 @@ export function detectCollisions(
     }
   }
 
-  // 3. Regla universal y matemática BRANCH_MISMATCH (Warning)
+  // 3. Regla universal BRANCH_MISMATCH (Warning)
   // Si las ramas difieren y existe un clon hermano del destino con la misma rama que el origen, siempre es un mismatch
   for (const link of junctions) {
     if (link.isBroken || !link.targetWorktreeId) continue

@@ -18,7 +18,7 @@ npm run check
 
 ## How to Add a New `EcosystemAdapter`
 
-Banyan uses a static, zero-binary-spawning adapter architecture in `src/core/adapters/` to maintain 60 FPS TUI responsiveness:
+Ecosystem adapters in `src/core/adapters/` only read files from disk and never spawn processes (no `npm`, `pip`, `cargo`, `go` or `dotnet`), which keeps scans fast. Please keep new adapters that way:
 
 1. **Create your adapter** in `src/core/adapters/<lang>Adapter.ts` implementing the `EcosystemAdapter` interface (`src/core/adapters/types.ts`):
    - `detect(worktreePath)`: Fast `fs.access` check for manifest files (e.g., `pom.xml`, `composer.json`, `Gemfile`).

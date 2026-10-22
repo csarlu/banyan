@@ -74,7 +74,7 @@ export const DICTIONARIES = {
           tip: 'Tip: Pulsa [t] ahora mismo para probar las 6 paletas de colores disponibles.',
         },
         {
-          h: '2/3 · Reglas Matemáticas de Colisión y Auto-Fix',
+          h: '2/3 · Reglas de Colisión y Auto-Fix',
           b: [
             ' MULTI_CONSUMER_DIRTY: 2+ worktrees apuntan a una librería sucia o con un agente activo.',
             ' BRANCH_MISMATCH: Tu worktree está en la rama X, apunta a la rama Y, pero existe un hermano en la rama X.',
@@ -193,7 +193,7 @@ export const DICTIONARIES = {
           tip: 'Tip: Press [t] right now to cycle through the 6 built-in color palettes.',
         },
         {
-          h: '2/3 · Universal Collision Rules & Auto-Fix',
+          h: '2/3 · Collision Rules & Auto-Fix',
           b: [
             ' MULTI_CONSUMER_DIRTY: 2+ worktrees point to a dirty or agent-active library.',
             ' BRANCH_MISMATCH: Worktree is on branch X, links to branch Y, while a sibling on branch X exists.',
