@@ -40,20 +40,30 @@
 
 ## ⚡ Why Banyan Exists
 
-Modern engineering teams run **3 to 10 AI coding agents in parallel**—spawning **Claude Code (`claude`)**, **OpenAI Codex CLI (`codex`)**, **Google Antigravity CLI (`agy`)**, or **Aider** across dedicated `git worktree` directories, alongside agentic IDEs like **Cursor**, **Windsurf**, and **Antigravity IDE**.
+Banyan started in my own side projects. I was running several AI coding agents in parallel, and they often chose to work in their own `git worktree`. On paper, that keeps everyone isolated. In practice, they kept stepping on each other: tests failing for no reason, agents "fixing" bugs that weren't theirs, tokens burned chasing ghosts, and a real risk of losing uncommitted work.
 
-**Here is the catch:** `git worktree` only isolates tracked source files. It **never** isolates local cross-repo links:
+**Here is the catch:** `git worktree` only isolates tracked source files. It never isolates local cross-repo links:
 - POSIX symlinks & Windows NTFS junctions (`npm link`, `pnpm link`, shared `node_modules`)
 - Python editable installs (`pip install -e`, `.pth`, `.venv` sharing, `PYTHONPATH`)
 - Local manifest overrides (`go.mod replace`, `go.work`, `Cargo.toml path`, `.csproj ProjectReference`, `tsconfig.json paths`)
 
 When Agent A edits a shared library or mutates a linked environment, **Agent B silently compiles and tests against Agent A's uncommitted, half-written code.**
 
-**Banyan (`bny`)** solves this in **under 15ms**:
-- 🧭 **Maps your entire multi-repo worktree graph** in a 60 FPS interactive TUI with zero-process-spawning filesystem fingerprinting.
-- 🤖 **Detects live AI agents** via lockfiles, multiplexer panes (`tmux` / `psmux`), and filesystem write heartbeats.
-- 🛡️ **Catches dependency collisions** (`MULTI_CONSUMER_DIRTY`, `BRANCH_MISMATCH`, `SHARED_ENV_DIRTY`, `BROKEN_LINK`) before a single LLM token is wasted.
-- 🔧 **Auto-fixes links in one keystroke (`[f]`)** or exposes them directly to your agents via **Model Context Protocol (`bny --mcp`)**.
+The more multi-repo your setup is, the worse it gets. Monorepo vs multi-repo has its own trade-offs, and that debate is out of scope here. But every locally linked repo is one more place where two agents can collide, so the more repos and cross-dependencies you have, the more Banyan saves you.
+
+Banyan (`bny`) works on two fronts:
+
+**For you, an interactive TUI that:**
+- Maps your multi-repo worktree graph and how every worktree is linked to the others.
+- Detects live AI agents via lockfiles, multiplexer panes (`tmux` / `psmux`), and filesystem write heartbeats.
+- Flags dependency collisions (`MULTI_CONSUMER_DIRTY`, `BRANCH_MISMATCH`, `SHARED_ENV_DIRTY`, `BROKEN_LINK`, …) before your agents waste tokens on them.
+- Fixes links in one keystroke (`[f]`).
+
+**For your agents, a guardrail:**
+- A pre-flight hook (`bny --guard`) that blocks an agent before it touches a shared dependency ([example](#-equipping-your-ai-agents-mcp-guard--context)).
+- Workspace rules injected into `AGENTS.md` / `CLAUDE.md` (`bny --init-agent-rules`).
+- A short worktree briefing ready to pipe into any prompt (`bny --agent-context`).
+- An MCP server (`bny --mcp`) so agents can query and resolve collisions themselves.
 
 <details>
 <summary><b>🤖 Supported AI Agents, Terminal CLIs & Agentic IDEs (Click to expand)</b></summary>
@@ -92,6 +102,17 @@ Banyan is built first and foremost for **terminal-first multi-agent workflows**,
 ---
 
 ## 🚀 Quick Start (30 Seconds)
+
+### Requirements
+
+| Tool | Required? | Without it |
+| :--- | :--- | :--- |
+| **Node.js ≥ 20** | Yes | Banyan does not run. |
+| **git** | Yes | Banyan exits with an install hint instead of showing an empty workspace. |
+| `tmux` (Linux/macOS) / `psmux` (Windows) | Optional | `[s]` / `[w]` / `[a]` and pane-based agent detection are unavailable. Lockfiles and heartbeats still work. |
+| Clipboard tool (`clip` / `pbcopy` / `xclip` / `wl-copy`) | Optional | `[y]` cannot copy paths or commands. |
+
+Run `bny --doctor` at any time to check every requirement and get the install command for your OS.
 
 ### 1. Run or Install
 
@@ -141,7 +162,7 @@ Invoke-Expression (& banyan-bin --init-shell powershell)
 ## 📸 Interactive TUI & Architecture Showcase
 
 ### 1. Worktrees, Active AI Agents & Branched Git Graph (Tab 1)
-Audits multi-repository worktrees grouped with Devicon ecosystem badges (` Go`, ` Rust`, ` Python`, ` Node`, ` .NET`), dependency role indicators (` ref` vs `↳ dep`), live AI agent locks (``), uncommitted dirty file counters, and colored branched Git commit graphs in real time.
+Shows multi-repository worktrees grouped with Devicon ecosystem badges (` Go`, ` Rust`, ` Python`, ` Node`, ` .NET`), dependency role indicators (` ref` vs `↳ dep`), live AI agent locks (``), uncommitted dirty file counters, and colored branched Git commit graphs in real time.
 
 ![Banyan Worktrees Tab](docs/assets/tab1-worktrees.svg)
 
@@ -154,14 +175,14 @@ Master-Detail split architecture that maps local cross-repo links and shared roo
 
 ---
 
-### 3. Health & Collisions — Multi-Agent Isolation & Forensics (Tab 3)
-Master-Detail collision radar that lists all active isolation alerts by severity on the left and displays a full **Collision Forensics Console** on the right—complete with root cause analysis, affected worktree **Blast Radius**, and 1-key copy-pasteable or executable Auto-Fix commands (`[f]`).
+### 3. Health & Collisions (Tab 3)
+Lists every active collision by severity on the left. On the right, the selected collision shows its root cause, the worktrees it affects, and a fix command you can copy (`[y]`) or run (`[f]`).
 
 ![Banyan Health Tab](docs/assets/tab3-health.svg)
 
 ---
 
-### 4. Interactive Visual Legend (`[i]`) & Pedagogical Explain Modal (`[e]`)
+### 4. Visual Legend (`[i]`) & Explain Modal (`[e]`)
 Press **`[i]`** from any screen to open the 4-quadrant **Visual Icon, Role, Health & Keybinding Legend**, or press **`[e]`** to inspect every collision rule with ASCII topology diagrams, real-world analogies, and AI agent failure modes.
 
 ![Banyan Visual Legend Modal](docs/assets/modal-legend.svg)
@@ -183,7 +204,7 @@ Switch between 7 built-in 24-bit TrueColor themes on the fly by pressing **`[t]`
 
 ## 🌐 Polyglot Ecosystem Adapters
 
-Banyan inspects manifests, symlinks, and junctions directly via asynchronous filesystem calls (`fs.promises`, `lstat`). It **never** spawns heavy compilers (`cargo`, `pip`, `dotnet`, `go`), guaranteeing sub-15ms scans and 60 FPS rendering:
+Banyan reads manifests, symlinks, and junctions directly from disk (`fs.promises`, `lstat`) and only shells out to `git` (plus your multiplexer, for agent detection). It never spawns compilers or package managers (`cargo`, `pip`, `dotnet`, `go`, `npm`), so a full scan of a workspace with ~20 worktrees takes around a second:
 
 | Ecosystem | Local Link Mechanism | Shared Root Env | What Banyan Audits on Disk |
 | :--- | :--- | :--- | :--- |
@@ -196,20 +217,21 @@ Banyan inspects manifests, symlinks, and junctions directly via asynchronous fil
 
 ---
 
-## 🛡️ The 5 Mathematical Collision Rules
+## 🛡️ The 6 Collision Rules
 
-Banyan's engine evaluates 5 formal graph invariants on every scan. Click any rule below to see a real-world scenario, topology diagram, and exact auto-fix:
+Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a real-world scenario, a topology diagram, and the fix for each one:
 
 | Rule ID | Severity | What It Detects | One-Key Auto-Fix (`[f]`) |
 | :--- | :--- | :--- | :--- |
 | **`MULTI_CONSUMER_DIRTY`** | 🚨 **Critical** | 2+ worktrees link to a local dependency that has uncommitted changes or an active AI agent. | Creates an isolated sibling worktree (`git worktree add`). |
 | **`BRANCH_MISMATCH`** | ⚠️ **Warning** | Worktree on branch `X` links to dependency on branch `Y`, while a sibling dependency worktree on branch `X` exists. | Rewires the symlink / NTFS junction / manifest to the matching branch `X` worktree. |
 | **`BROKEN_LINK`** | 🚨 **Critical** | A symlink, junction, or manifest path points to a worktree directory that was deleted. | Cleans up the dead link or re-points to the primary repository worktree. |
-| **`SHARED_ENV_DIRTY`** | ⚠️ **Warning** | Multiple worktrees share a root `node_modules`, `.venv`, or `target/` while one is dirty or has an active agent. | Unlinks the shared environment folder so dependencies can be installed independently. |
-| **`EXTERNAL_TARGET`** | ℹ️ **Info** | A dependency link points outside the monitored Banyan workspace radar. | Generates the config snippet to register the external repository in `banyan.config.json`. |
+| **`SHARED_ENV_DIRTY`** | ⚠️ **Warning** (🚨 **Critical** if both sides have an active agent) | Multiple worktrees share a root `node_modules`, `.venv`, or `target/` while one is dirty or has an active agent. | Unlinks the shared environment folder so dependencies can be installed independently. |
+| **`EXTERNAL_TARGET`** | ℹ️ **Warning** (informational) | A dependency link points outside the monitored Banyan workspace. | Generates the config snippet to register the external repository in `banyan.config.json`. |
+| **`MISSING_REPO`** | ⚠️ **Warning** | A repository listed in `banyan.config.json` is not on disk or is not a git repository. | Opens the config (`bny --config`) so you can fix or remove the path. |
 
 <details>
-<summary><b>🔍 Deep-Dive: Diagrams & Real-World Scenarios for All 5 Rules (Click to expand)</b></summary>
+<summary><b>🔍 Deep-Dive: Diagrams & Real-World Scenarios for All 6 Rules (Click to expand)</b></summary>
 <br>
 
 ### 1. `MULTI_CONSUMER_DIRTY` (Critical 🚨)
@@ -275,6 +297,17 @@ Banyan's engine evaluates 5 formal graph invariants on every scan. Click any rul
 - **Failure Mode:** Banyan cannot audit git status or agent locks on untracked external paths.
 - **Auto-Fix:** Adds the external repository to `banyan.config.json`.
 
+---
+
+### 6. `MISSING_REPO` (Warning ⚠️)
+> *Analogy: A guard rota that lists a gate nobody is posted at.*
+
+```text
+[banyan.config.json] ───(repo "engine")───► ✖ /projects/core-service (Not found / not a git repo)
+```
+- **Failure Mode:** The repo was moved, renamed or never cloned. Without this warning, Banyan would just stop watching it and any collision involving it would go unnoticed.
+- **Fix:** Run `bny --config` and update or remove the entry.
+
 </details>
 
 ---
@@ -302,6 +335,29 @@ bny --mcp --allow-fix
 export BANYAN_MCP_ALLOW_FIX=1
 bny --mcp
 ```
+
+### Example: block Claude Code before it edits on top of a collision
+
+Add `bny --guard` as a `PreToolUse` hook in `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write|Bash",
+        "hooks": [{ "type": "command", "command": "bny --guard" }]
+      }
+    ]
+  }
+}
+```
+
+- **Exit 0:** the worktree is clean and the tool call goes ahead.
+- **Exit 2 (critical collision):** Claude Code blocks the tool call and hands the agent Banyan's briefing (on `stderr`), so it can see what is wrong and how to fix it.
+- **Exit 3 (branch mismatch):** non-blocking. The call goes ahead and the briefing is shown as a warning.
+
+Other harnesses that run shell hooks can use the same exit codes. As a git `pre-commit` hook, any non-zero exit stops the commit.
 
 ---
 
@@ -342,6 +398,18 @@ Banyan ships with **English** (default) and **Spanish**. Resolution order:
 5. English
 
 Inside the TUI press **`[L]`** to toggle the language live. This covers the TUI, `--help`, `--status`, `--doctor`, `--explain`, `--agent-context`/`--guard` and the playground README.
+
+---
+
+## 🤝 Contributing
+
+Banyan is a young project that grew out of my own multi-agent workflows, so there are surely setups and edge cases it doesn't cover yet. Feedback is very welcome:
+
+- Found a bug or a collision Banyan missed? [Open an issue](https://github.com/csarlu/banyan/issues).
+- Want to fix it or add an ecosystem adapter? PRs are more than welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
+
+---
+
 ## 📄 License
 
 [MIT](./LICENSE)
