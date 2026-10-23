@@ -3,9 +3,11 @@ import path from 'node:path'
 import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../types.js'
 import { quoteArg } from '../shellSafe.js'
 import {
+  computeTargetSubpath,
   EcosystemAdapter,
   inspectFolderSharedEnv,
   pathExists,
+  resolveNewTargetPath,
   resolvePathToWorktree,
 } from './types.js'
 
@@ -51,6 +53,7 @@ async function inspectPackageEntry(
       packageName,
       linkPath,
       targetRealPath,
+      targetSubpath: computeTargetSubpath(targetRealPath, matchedWorktree),
       targetWorktreeId: matchedWorktree?.id,
       targetRepoAlias: matchedWorktree?.repoAlias,
       targetBranch: matchedWorktree?.branch,
@@ -146,9 +149,10 @@ export const nodeAdapter: EcosystemAdapter = {
   },
 
   buildFixCommand(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
+    const newTarget = resolveNewTargetPath(link, newTargetWorktree)
     if (isWin) {
-      return `cmd /c rmdir ${quoteArg(link.linkPath)} && mklink /J ${quoteArg(link.linkPath)} ${quoteArg(newTargetWorktree.worktreePath)}`
+      return `cmd /c rmdir ${quoteArg(link.linkPath)} && mklink /J ${quoteArg(link.linkPath)} ${quoteArg(newTarget)}`
     }
-    return `rm -rf ${quoteArg(link.linkPath)} && ln -s ${quoteArg(newTargetWorktree.worktreePath)} ${quoteArg(link.linkPath)}`
+    return `rm -rf ${quoteArg(link.linkPath)} && ln -s ${quoteArg(newTarget)} ${quoteArg(link.linkPath)}`
   },
 }

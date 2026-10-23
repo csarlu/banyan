@@ -10,6 +10,7 @@ import { buildEcosystemSnapshot, areSnapshotsEquivalent } from '../core/orchestr
 import { removeWorktree } from '../core/git.js'
 import { copyToClipboard } from '../core/clipboard.js'
 import { executeFixCommand } from '../core/fixRunner.js'
+import { isExecutableFix } from '../core/shellSafe.js'
 import { createWorktreeWithStrategy } from '../core/worktreeCreator.js'
 import { getMuxBinaryName, openMuxSplit, openMuxWindow } from '../integrations/mux.js'
 import { muxInstallHint } from '../core/prerequisites.js'
@@ -467,16 +468,29 @@ export const App: React.FC<Props> = ({
     } else if (input === 'f') {
       if (activeTab === 3 && warnings.length > 0) {
         const chosen = warnings[selectedWarningIndex] || warnings[0]
-        if (chosen?.suggestedFixCommand) {
+        if (chosen?.suggestedFixCommand && isExecutableFix(chosen.suggestedFixCommand)) {
           const affectedWt = worktrees.find((w) => chosen.affectedWorktreeIds.includes(w.id))
           const cwd = affectedWt?.worktreePath || baseCwd || process.cwd()
           setPendingFixWarning({ warning: chosen, cwd })
+        } else if (chosen?.suggestedFixCommand) {
+          setStatusMessage(
+            locale === 'es'
+              ? 'Pista manual / snippet: pulsa [y] para copiar o [c] para abrir config'
+              : 'Manual hint / snippet: press [y] to copy or [c] to open config',
+          )
+        } else {
+          setStatusMessage(
+            locale === 'es'
+              ? 'No hay auto-fix disponible para esta alerta'
+              : 'No auto-fix available for this alert',
+          )
         }
       } else if (activeTab === 1 && worktrees.length > 0) {
         const chosen = worktrees[selectedIndex]
         if (chosen) {
           const fixable = warnings.find(
-            (w) => w.affectedWorktreeIds.includes(chosen.id) && w.suggestedFixCommand,
+            (w) =>
+              w.affectedWorktreeIds.includes(chosen.id) && isExecutableFix(w.suggestedFixCommand),
           )
           if (fixable) {
             setPendingFixWarning({ warning: fixable, cwd: chosen.worktreePath })

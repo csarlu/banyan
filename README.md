@@ -57,7 +57,7 @@ Banyan (`bny`) works on two fronts:
 - Maps your multi-repo worktree graph and how every worktree is linked to the others.
 - Detects live AI agents via lockfiles, multiplexer panes (`tmux` / `psmux`), and filesystem write heartbeats.
 - Flags dependency collisions (`MULTI_CONSUMER_DIRTY`, `BRANCH_MISMATCH`, `SHARED_ENV_DIRTY`, `BROKEN_LINK`, …) before your agents waste tokens on them.
-- Fixes links in one keystroke (`[f]`).
+- Suggests the fix and, when the intent is clear, applies it in one keystroke (`[f]`).
 
 **For your agents, a guardrail:**
 - A pre-flight hook (`bny --guard`) that blocks an agent before it touches a shared dependency ([example](#-equipping-your-ai-agents-mcp-guard--context)).
@@ -221,14 +221,22 @@ Banyan reads manifests, symlinks, and junctions directly from disk (`fs.promises
 
 Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a real-world scenario, a topology diagram, and the fix for each one:
 
-| Rule ID | Severity | What It Detects | One-Key Auto-Fix (`[f]`) |
+| Rule ID | Severity | What It Detects | Suggested Fix / `[f]` Behavior |
 | :--- | :--- | :--- | :--- |
-| **`MULTI_CONSUMER_DIRTY`** | 🚨 **Critical** | 2+ worktrees link to a local dependency that has uncommitted changes or an active AI agent. | Creates an isolated sibling worktree (`git worktree add`). |
-| **`BRANCH_MISMATCH`** | ⚠️ **Warning** | Worktree on branch `X` links to dependency on branch `Y`, while a sibling dependency worktree on branch `X` exists. | Rewires the symlink / NTFS junction / manifest to the matching branch `X` worktree. |
-| **`BROKEN_LINK`** | 🚨 **Critical** | A symlink, junction, or manifest path points to a worktree directory that was deleted. | Cleans up the dead link or re-points to the primary repository worktree. |
-| **`SHARED_ENV_DIRTY`** | ⚠️ **Warning** (🚨 **Critical** if both sides have an active agent) | Multiple worktrees share a root `node_modules`, `.venv`, or `target/` while one is dirty or has an active agent. | Unlinks the shared environment folder so dependencies can be installed independently. |
-| **`EXTERNAL_TARGET`** | ℹ️ **Warning** (informational) | A dependency link points outside the monitored Banyan workspace. | Generates the config snippet to register the external repository in `banyan.config.json`. |
-| **`MISSING_REPO`** | ⚠️ **Warning** | A repository listed in `banyan.config.json` is not on disk or is not a git repository. | Opens the config (`bny --config`) so you can fix or remove the path. |
+| **`MULTI_CONSUMER_DIRTY`** | 🚨 **Critical** | 2+ worktrees link to a local dependency that has uncommitted changes or an active AI agent. | **`[f]` Auto-Fix:** Creates a clean isolated worktree on the target's active branch (`git worktree add -b <branch>-isolated`) and relinks each consumer to it. |
+| **`BRANCH_MISMATCH`** | ⚠️ **Warning** | Worktree on branch `X` links to dependency on branch `Y`, **and** a sibling dependency worktree on branch `X` exists on disk. | **`[f]` Auto-Fix:** Rewires symlinks/junctions, `go.mod`, `Cargo.toml`, `.csproj`, `.venv` `pip -e` / `.pth`, and `.env` `PYTHONPATH` to the sibling worktree on branch `X`. (`tsconfig.json paths` and `sys.path.append` in `.py` files emit a manual hint.) |
+| **`BROKEN_LINK`** | 🚨 **Critical** | A symlink, junction, or manifest path points to a worktree directory that was deleted. | **`[f]` Auto-Fix** for dead symlinks/junctions (removes the dangling link). Manifest references (`go.mod`, `Cargo.toml`, `.csproj`) emit a manual review hint. |
+| **`SHARED_ENV_DIRTY`** | ⚠️ **Warning** (🚨 **Critical** if both sides have an active agent) | Multiple worktrees share a root `node_modules`, `.venv`, `target/`, or `obj/` while one is dirty or has an active agent. | **`[f]` Auto-Fix:** Unlinks the shared environment folder and initializes a local one (`npm install`, `python -m venv`, or local `target/` / `obj/`). |
+| **`EXTERNAL_TARGET`** | ℹ️ **Warning** (informational) | A dependency link points outside the monitored Banyan workspace. | **Snippet (`[y]` Copy / `[c]` Config):** Generates the `"repos"` entry snippet to register the external repository in `banyan.config.json`. |
+| **`MISSING_REPO`** | ⚠️ **Warning** | A repository listed in `banyan.config.json` is not on disk or is not a git repository. | **`[f]` Auto-Fix:** Opens the config (`bny --config`) so you can fix or remove the path. |
+
+### 🧭 Isolate vs. Relink: Choosing the Right Fix
+
+Not every cross-repo link should be fixed the same way:
+
+- **Isolate (own clean worktree or published package version)** is the right call for **stability**. When a worktree only consumes a dependency and shouldn't be affected by experimental edits elsewhere (`MULTI_CONSUMER_DIRTY`, `SHARED_ENV_DIRTY`), give it its own clean worktree or local environment.
+- **Relink (wire matching branches together)** is the right call for **cross-repo features**. `BRANCH_MISMATCH` only fires when Banyan finds a sibling worktree of the dependency on the **exact same branch name** as the consumer (using the heuristic `same branch name = intended feature pair`). Linking `app (feat-auth)` to `lib (main)` when no `lib (feat-auth)` exists is normal and does not trigger a warning.
+- **Sharing a dirty copy is almost never intended.** Two worktrees pointing at a single uncommitted dependency or a shared root `node_modules` / `.venv` / `target/` means one agent's half-written code or package installs silently mutate the other agent's build.
 
 <details>
 <summary><b>🔍 Deep-Dive: Diagrams & Real-World Scenarios for All 6 Rules (Click to expand)</b></summary>
@@ -245,7 +253,7 @@ Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a re
 [Agent 2: Feature Worktree]    ───(edits)───►
 ```
 - **Failure Mode:** Stable worktree `app:main` silently ingests half-baked code from `common:develop`. Tests fail for reasons unrelated to `main`, causing agents in `main` to hallucinate fixes.
-- **Auto-Fix:** Isolates the library into a dedicated worktree (`git worktree add ../common-feat`).
+- **Auto-Fix (`[f]`):** Creates a clean isolated worktree on the dependency's active branch (`git -C <repo> worktree add -b <branch>-isolated ../<alias>-isolated <branch>`) and relinks the consumers to it so the dirty worktree is no longer shared.
 
 ---
 
@@ -257,11 +265,12 @@ Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a re
      (Expected target) ──► [@acme/ui (branch: feat-login)] (Exists on disk, but ignored!)
      (Actual link ⚠️)  ──► [@acme/ui (branch: develop)]
 ```
-- **Failure Mode:** The agent edits `ui (feat-login)` and tests `app (feat-login)`, seeing zero changes because the symlink still points to `ui (develop)`.
-- **Auto-Fix:** Rewires the link to the matching branch worktree:
+- **What It Assumes:** This rule only fires when a sibling worktree of the target dependency with the **same branch name** (`feat-login`) exists on disk (heuristic: matching branch name = intended pair).
+- **Failure Mode:** The agent edits `ui (feat-login)` and tests `app (feat-login)`, seeing zero changes because the link still points to `ui (develop)`.
+- **Auto-Fix (`[f]`):** Rewires the symlink, NTFS junction, `go.mod`, `Cargo.toml`, `.csproj`, `.env` `PYTHONPATH`, `.pth`, or worktree `.venv` editable install (`<worktree>/.venv/.../python -m pip install -e`) to the matching branch worktree (`tsconfig.json paths` and `sys.path.append` in `.py` files emit a manual hint):
   ```bash
-  # Linux/macOS: ln -sfn ../ui-feat-login node_modules/@acme/ui
-  # Windows:     cmd /c rmdir node_modules\@acme\ui && mklink /J node_modules\@acme\ui ..\ui-feat-login
+  # Linux/macOS: rm -rf "node_modules/@acme/ui" && ln -s "../ui-feat-login" "node_modules/@acme/ui"
+  # Windows:     cmd /c rmdir "node_modules\@acme\ui" && mklink /J "node_modules\@acme\ui" "..\ui-feat-login"
   ```
 
 ---
@@ -273,7 +282,7 @@ Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a re
 [App Worktree] ───(symlink/junction)───► ✖ /projects/old-worktree (Deleted from disk)
 ```
 - **Failure Mode:** Compilers and test runners crash immediately with `ENOENT` or module resolution errors.
-- **Auto-Fix:** Removes the dangling symlink/junction cleanly.
+- **Auto-Fix (`[f]`):** Removes dangling symlinks/junctions cleanly. For broken manifest paths (`go.mod`, `Cargo.toml`, `.csproj`), emits a manual review hint so you can decide whether to drop or repoint the reference.
 
 ---
 
@@ -286,7 +295,7 @@ Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a re
 [Hotfix Worktree]  (🔗nm) ──(shared root)──────────┘
 ```
 - **Failure Mode:** Sharing a root `node_modules` or `.venv` saves disk space, but if an agent runs `npm install` or `pip install`, sibling worktrees break.
-- **Auto-Fix:** Unlinks the root folder before mutating packages.
+- **Auto-Fix (`[f]`):** Unlinks the shared environment symlink/junction (`node_modules`, `.venv`, `target/`, `obj/`) and initializes a local one (`npm install`, `python -m venv`, or local build directory).
 
 ---
 
@@ -295,7 +304,7 @@ Banyan evaluates 6 rules on every scan. The deep-dive below the table shows a re
 [Monitored App Worktree] ───(link)───► 📁 /external/untracked-repo (Outside Banyan radar)
 ```
 - **Failure Mode:** Banyan cannot audit git status or agent locks on untracked external paths.
-- **Auto-Fix:** Adds the external repository to `banyan.config.json`.
+- **Suggested Snippet (`[y]` Copy / `[c]` Config):** Generates the `"repos"` JSON entry (`{"alias":"...","path":"..."}`) so you can copy it with `[y]` and paste it into `banyan.config.json` (`[c]`).
 
 ---
 

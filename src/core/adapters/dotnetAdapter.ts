@@ -3,9 +3,11 @@ import path from 'node:path'
 import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../types.js'
 import { quoteArg } from '../shellSafe.js'
 import {
+  computeTargetSubpath,
   EcosystemAdapter,
   inspectFolderSharedEnv,
   pathExists,
+  resolveNewTargetPath,
   resolvePathToWorktree,
 } from './types.js'
 
@@ -139,6 +141,8 @@ export const dotnetAdapter: EcosystemAdapter = {
             packageName: ref.projectName,
             linkPath: projFile.fullPath,
             targetRealPath,
+            rawTarget: ref.includePath,
+            targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
             targetWorktreeId: matchedWt?.id,
             targetRepoAlias: matchedWt?.repoAlias,
             targetBranch: matchedWt?.branch,
@@ -159,6 +163,7 @@ export const dotnetAdapter: EcosystemAdapter = {
 
   buildFixCommand(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
     const manifest = link.manifestFile || link.linkPath
-    return `dotnet remove ${quoteArg(manifest)} reference ${quoteArg(link.targetRealPath)} && dotnet add ${quoteArg(manifest)} reference ${quoteArg(newTargetWorktree.worktreePath)}`
+    const newTarget = resolveNewTargetPath(link, newTargetWorktree)
+    return `dotnet remove ${quoteArg(manifest)} reference ${quoteArg(link.targetRealPath)} && dotnet add ${quoteArg(manifest)} reference ${quoteArg(newTarget)}`
   },
 }

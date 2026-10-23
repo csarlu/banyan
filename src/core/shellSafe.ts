@@ -38,3 +38,40 @@ export function safeToken(value: string): string | null {
 export function commentSafe(value: string): string {
   return stripNewlines(value)
 }
+
+/**
+ * Returns true when `command` is an actual shell command that can be executed,
+ * and false when it is empty or a manual hint / config snippet (`# ...`).
+ */
+export function isExecutableFix(command?: string): boolean {
+  if (!command) return false
+  const trimmed = command.trim()
+  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('{')) return false
+  return true
+}
+
+/**
+ * Builds a shell-safe in-place text replacement command for manifest/config files
+ * (`Cargo.toml`, `.cargo/config.toml`, `.env`, `.pth`, `.egg-link`, `.vscode/settings.json`),
+ * falling back to a `# comment` hint when either token contains shell metacharacters.
+ */
+export function buildFileReplaceCommand(
+  filePath: string,
+  oldStr: string,
+  newStr: string,
+  fallbackComment: string,
+): string {
+  if (!oldStr || !newStr || oldStr === newStr || !safeToken(oldStr) || !safeToken(newStr)) {
+    return `# ${commentSafe(fallbackComment)}`
+  }
+  if (isWin) {
+    return `(Get-Content -Raw -LiteralPath ${quoteArg(filePath)}).Replace(${quoteArg(oldStr)}, ${quoteArg(newStr)}) | Set-Content -NoNewline -LiteralPath ${quoteArg(filePath)}`
+  }
+  const escapedOld = oldStr.replace(/[.\\]/g, '\\$&')
+  const escapedNew = newStr.replace(/[&\\]/g, '\\$&')
+  const sedExpr = quoteArg(`s|${escapedOld}|${escapedNew}|g`)
+  if (process.platform === 'darwin') {
+    return `sed -i '' ${sedExpr} ${quoteArg(filePath)}`
+  }
+  return `sed -i ${sedExpr} ${quoteArg(filePath)}`
+}

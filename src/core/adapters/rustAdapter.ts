@@ -1,12 +1,15 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../types.js'
-import { commentSafe } from '../shellSafe.js'
+import { buildFileReplaceCommand } from '../shellSafe.js'
 import {
+  computeTargetSubpath,
   EcosystemAdapter,
   inspectFolderSharedEnv,
   pathExists,
+  resolveNewTargetPath,
   resolvePathToWorktree,
+  resolveReplacementStrings,
 } from './types.js'
 
 export interface ParsedCargoPathDep {
@@ -125,6 +128,8 @@ export const rustAdapter: EcosystemAdapter = {
             packageName: dep.crateName,
             linkPath: fileInfo.full,
             targetRealPath,
+            rawTarget: dep.targetPath,
+            targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
             targetWorktreeId: matchedWt?.id,
             targetRepoAlias: matchedWt?.repoAlias,
             targetBranch: matchedWt?.branch,
@@ -144,6 +149,10 @@ export const rustAdapter: EcosystemAdapter = {
   },
 
   buildFixCommand(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
-    return `# Update path = "${commentSafe(newTargetWorktree.worktreePath.replace(/\\/g, '/'))}" for "${commentSafe(link.packageName)}" in ${commentSafe(link.manifestFile || 'Cargo.toml')}`
+    const manifestPath = link.linkPath || link.manifestFile || 'Cargo.toml'
+    const newTarget = resolveNewTargetPath(link, newTargetWorktree)
+    const { oldStr, newStr } = resolveReplacementStrings(link, newTargetWorktree)
+    const fallback = `Update path = "${newTarget.replace(/\\/g, '/')}" for "${link.packageName}" in ${link.manifestFile || 'Cargo.toml'}`
+    return buildFileReplaceCommand(manifestPath, oldStr, newStr, fallback)
   },
 }

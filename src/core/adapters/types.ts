@@ -46,6 +46,64 @@ export function resolvePathToWorktree(
   })
 }
 
+export function computeTargetSubpath(
+  targetPath: string,
+  matchedWorktree?: WorktreeNode,
+): string | undefined {
+  if (!targetPath || !matchedWorktree) return undefined
+  const rel = path.relative(path.resolve(matchedWorktree.worktreePath), path.resolve(targetPath))
+  if (!rel || rel === '.' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    return undefined
+  }
+  return rel.replace(/\\/g, '/')
+}
+
+export function resolveNewTargetPath(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
+  if (!link.targetSubpath) {
+    return newTargetWorktree.worktreePath
+  }
+  const useWin = newTargetWorktree.worktreePath.includes('\\')
+  const normalizedSub = link.targetSubpath.replace(/[\\/]+/g, useWin ? '\\' : '/')
+  return useWin
+    ? path.win32.join(newTargetWorktree.worktreePath, normalizedSub)
+    : path.posix.join(newTargetWorktree.worktreePath, normalizedSub)
+}
+
+export function resolveReplacementStrings(
+  link: JunctionLink,
+  newTargetWorktree: WorktreeNode,
+): { oldStr: string; newStr: string } {
+  const newTargetPath = resolveNewTargetPath(link, newTargetWorktree)
+
+  if (link.rawTarget) {
+    const raw = link.rawTarget
+    if (raw.startsWith('.')) {
+      const baseDir = link.sourceWorktreePath || path.dirname(link.linkPath)
+      const useBackslash = raw.includes('\\')
+      const rel = path.relative(path.resolve(baseDir), path.resolve(newTargetPath))
+      let formattedRel = useBackslash ? rel.replace(/\//g, '\\') : rel.replace(/\\/g, '/')
+      if (!formattedRel.startsWith('.')) {
+        formattedRel = (useBackslash ? '.\\' : './') + formattedRel
+      }
+      return { oldStr: raw, newStr: formattedRel }
+    }
+    const useBackslash = raw.includes('\\')
+    return {
+      oldStr: raw,
+      newStr: useBackslash ? newTargetPath.replace(/\//g, '\\') : newTargetPath.replace(/\\/g, '/'),
+    }
+  }
+
+  const useBackslash =
+    link.targetRealPath.includes('\\') && newTargetWorktree.worktreePath.includes('\\')
+  return {
+    oldStr: useBackslash
+      ? link.targetRealPath.replace(/\//g, '\\')
+      : link.targetRealPath.replace(/\\/g, '/'),
+    newStr: useBackslash ? newTargetPath.replace(/\//g, '\\') : newTargetPath.replace(/\\/g, '/'),
+  }
+}
+
 export async function inspectFolderSharedEnv(
   worktreePath: string,
   ecosystem: EcosystemId,

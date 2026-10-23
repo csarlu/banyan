@@ -3,6 +3,7 @@ import { loadConfig } from './config.js'
 import { buildEcosystemSnapshot } from './orchestrator.js'
 import { generateAgentBriefing } from './agentBriefing.js'
 import { executeFixCommand } from './fixRunner.js'
+import { isExecutableFix } from './shellSafe.js'
 import { BANYAN_VERSION } from '../version.js'
 
 export interface McpServerOptions {
@@ -196,7 +197,10 @@ export async function handleMcpRequest(
           }
         }
 
-        if (!warning.suggestedFixCommand) {
+        if (!warning.suggestedFixCommand || !isExecutableFix(warning.suggestedFixCommand)) {
+          const hintSuffix = warning.suggestedFixCommand
+            ? `\n\nSuggested Hint / Snippet:\n${warning.suggestedFixCommand}`
+            : ''
           return {
             jsonrpc: '2.0',
             id: id ?? null,
@@ -204,7 +208,7 @@ export async function handleMcpRequest(
               content: [
                 {
                   type: 'text',
-                  text: `Warning [${warning.type}] does not have an automated fix command.`,
+                  text: `Warning [${warning.type}] does not have an automated fix command.${hintSuffix}`,
                 },
               ],
               isError: true,

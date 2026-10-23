@@ -2,7 +2,13 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../types.js'
 import { commentSafe, quoteArg } from '../shellSafe.js'
-import { EcosystemAdapter, pathExists, resolvePathToWorktree } from './types.js'
+import {
+  computeTargetSubpath,
+  EcosystemAdapter,
+  pathExists,
+  resolveNewTargetPath,
+  resolvePathToWorktree,
+} from './types.js'
 
 const isWin = process.platform === 'win32'
 
@@ -116,6 +122,7 @@ export async function scanSourceSymlinks(
             packageName: relManifest,
             linkPath: fullPath,
             targetRealPath,
+            targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
             targetWorktreeId: matchedWt?.id,
             targetRepoAlias: matchedWt?.repoAlias,
             targetBranch: matchedWt?.branch,
@@ -181,6 +188,8 @@ export async function scanTsConfigPaths(
           packageName: item.alias,
           linkPath: fullPath,
           targetRealPath,
+          rawTarget: item.targetPath,
+          targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
           targetWorktreeId: matchedWt?.id,
           targetRepoAlias: matchedWt?.repoAlias,
           targetBranch: matchedWt?.branch,
@@ -227,12 +236,13 @@ export const rawSourceAdapter: EcosystemAdapter = {
   },
 
   buildFixCommand(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
+    const newTarget = resolveNewTargetPath(link, newTargetWorktree)
     if (link.mechanism === 'tsconfig-path') {
-      return `# Update compilerOptions.paths["${commentSafe(link.packageName)}"] in ${commentSafe(link.manifestFile || 'tsconfig.json')} to point to "${commentSafe(newTargetWorktree.worktreePath.replace(/\\/g, '/'))}"`
+      return `# Update compilerOptions.paths["${commentSafe(link.packageName)}"] in ${commentSafe(link.manifestFile || 'tsconfig.json')} to point to "${commentSafe(newTarget.replace(/\\/g, '/'))}"`
     }
     if (isWin) {
-      return `cmd /c rmdir ${quoteArg(link.linkPath)} && mklink /J ${quoteArg(link.linkPath)} ${quoteArg(newTargetWorktree.worktreePath)}`
+      return `cmd /c rmdir ${quoteArg(link.linkPath)} && mklink /J ${quoteArg(link.linkPath)} ${quoteArg(newTarget)}`
     }
-    return `rm -rf ${quoteArg(link.linkPath)} && ln -s ${quoteArg(newTargetWorktree.worktreePath)} ${quoteArg(link.linkPath)}`
+    return `rm -rf ${quoteArg(link.linkPath)} && ln -s ${quoteArg(newTarget)} ${quoteArg(link.linkPath)}`
   },
 }

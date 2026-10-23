@@ -134,15 +134,15 @@ export const KNOWLEDGE_BASE: Record<Locale, Record<DocTopicId, PedagogicalArticl
         'El Agente 1 sufrirá errores fantasma causados por los cambios en caliente del Agente 2 y entrará en un bucle infinito intentando arreglar código que él no ha roto.',
       ],
       howToFix: [
-        'Haz commit o stash de los cambios en la librería compartida, o',
-        'Crea un worktree aislado de la librería (git worktree add) exclusivamente para el Agente 2.',
+        'Pulsa [f] para crear un worktree limpio en la rama activa de la librería y re-enlazar automáticamente a los consumidores.',
+        'O haz commit / stash de los cambios en la librería compartida si quieres que todos consuman la misma copia.',
       ],
     },
     BRANCH_MISMATCH: {
       id: 'BRANCH_MISMATCH',
       code: 'WARN-COLLISION-02',
       title: 'Espejismo de Rama Desalineada (BRANCH_MISMATCH)',
-      tlDr: 'Tu worktree está en la rama "X", su junction apunta a la librería en la rama "Y", ¡pero Banyan ha descubierto que ya tienes otro worktree de esa librería en la rama "X" que olvidaste enlazar!',
+      tlDr: 'Tu worktree está en la rama "X", su enlace apunta a la librería en la rama "Y", ¡pero Banyan ha descubierto que ya tienes otro worktree de esa librería en la rama "X" que olvidaste enlazar!',
       analogy:
         'Has comprado un mando nuevo para el televisor del salón, pero sigue emparejado por Bluetooth con el televisor viejo del dormitorio. Pulsas los botones y crees que no funciona, pero estás cambiando de canal en otra habitación.',
       diagram: [
@@ -151,10 +151,11 @@ export const KNOWLEDGE_BASE: Record<Locale, Record<DocTopicId, PedagogicalArticl
         '       (Realidad actual ⚠️)     ──▶ [common (rama: develop)]',
       ],
       whyItMattersForAgents: [
-        'El agente edita archivos en "common (feat-login)", luego compila "App (feat-login)" y ve que sus cambios no surten efecto. Gasta miles de tokens reescribiendo código porque lee el junction equivocado.',
+        'Esta alerta solo salta cuando existe un worktree hermano de la dependencia con el mismo nombre de rama (heurística: mismo nombre de rama = pareja intencionada).',
+        'El agente edita archivos en "common (feat-login)", luego compila "App (feat-login)" y ve que sus cambios no surten efecto. Gasta miles de tokens reescribiendo código porque lee el enlace equivocado.',
       ],
       howToFix: [
-        'Copia y ejecuta el comando Auto-Fix que te muestra Banyan para redirigir el junction hacia el worktree hermano con la misma rama.',
+        'Pulsa [f] (o copia el comando con [y]) para redirigir el enlace o manifiesto hacia el worktree hermano con la misma rama.',
       ],
     },
     BROKEN_LINK: {
@@ -318,14 +319,15 @@ export const KNOWLEDGE_BASE: Record<Locale, Record<DocTopicId, PedagogicalArticl
         'Agent 1 will experience phantom build errors caused by Agent 2 live edits and waste tokens trying to fix code it did not break.',
       ],
       howToFix: [
-        'Commit or stash changes in the shared library, or create a dedicated library worktree for Agent 2.',
+        'Press [f] to create a clean isolated worktree on the library active branch and automatically relink the consumers to it.',
+        'Or commit / stash the uncommitted changes in the shared library if all consumers should use it.',
       ],
     },
     BRANCH_MISMATCH: {
       id: 'BRANCH_MISMATCH',
       code: 'WARN-COLLISION-02',
       title: 'Branch Mismatch Mirage (BRANCH_MISMATCH)',
-      tlDr: 'Your worktree is on branch "X", its junction points to branch "Y", YET Banyan found a sibling worktree of that library on branch "X" that you forgot to link!',
+      tlDr: 'Your worktree is on branch "X", its link points to branch "Y", YET Banyan found a sibling worktree of that library on branch "X" that you forgot to link!',
       analogy:
         'You bought a new TV remote for the living room, but it is still paired via Bluetooth to the bedroom TV. You press buttons thinking it is broken, while changing channels in another room.',
       diagram: [
@@ -334,10 +336,11 @@ export const KNOWLEDGE_BASE: Record<Locale, Record<DocTopicId, PedagogicalArticl
         '       (Actual reality ⚠️)      ──▶ [common (branch: develop)]',
       ],
       whyItMattersForAgents: [
+        'This rule only fires when a sibling worktree of the dependency with the exact same branch name exists on disk (heuristic: same branch name = intended feature pair).',
         'The agent edits "common (feat-login)", builds "App (feat-login)", and sees zero changes take effect — looping endlessly.',
       ],
       howToFix: [
-        'Run the suggested Auto-Fix command to repoint the junction to the matching sibling worktree.',
+        'Press [f] (or copy with [y]) to rewire the symlink, junction, or manifest to the matching sibling worktree.',
       ],
     },
     BROKEN_LINK: {

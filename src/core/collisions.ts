@@ -1,6 +1,7 @@
-import { CollisionWarning, JunctionLink, WorktreeNode } from './types.js'
+import path from 'node:path'
+import { CollisionWarning, JunctionLink, SharedEnvInfo, WorktreeNode } from './types.js'
 import { getAdapterById, rawSourceAdapter } from './adapters/index.js'
-import { commentSafe, quoteArg } from './shellSafe.js'
+import { commentSafe, isExecutableFix, quoteArg, safeToken } from './shellSafe.js'
 
 const isWin = process.platform === 'win32'
 
@@ -14,12 +15,101 @@ function buildRemoveLinkCommand(link: JunctionLink): string {
   return `rm -rf ${quoteArg(link.linkPath)}`
 }
 
-function resolveFixCommandForLink(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
+function resolveFixCommandForLink(
+  link: JunctionLink,
+  newTargetWorktree: WorktreeNode,
+  includeManifestPath: boolean = false,
+): string {
   if (link.mechanism === 'tsconfig-path' || link.mechanism === 'source-symlink') {
     return rawSourceAdapter.buildFixCommand(link, newTargetWorktree)
   }
-  const adapter = getAdapterById(link.ecosystem)
-  return adapter.buildFixCommand(link, newTargetWorktree)
+  const effectiveLink =
+    includeManifestPath && link.ecosystem === 'dotnet' && link.linkPath
+      ? { ...link, manifestFile: link.linkPath }
+      : link
+  const adapter = getAdapterById(effectiveLink.ecosystem)
+  const cmd = adapter.buildFixCommand(effectiveLink, newTargetWorktree)
+  if (
+    includeManifestPath &&
+    effectiveLink.ecosystem === 'go' &&
+    effectiveLink.linkPath &&
+    cmd.startsWith('go mod edit ')
+  ) {
+    return `${cmd} ${quoteArg(effectiveLink.linkPath)}`
+  }
+  return cmd
+}
+
+function buildMultiConsumerIsolateAndRelinkCommand(
+  targetWt: WorktreeNode,
+  links: JunctionLink[],
+): string {
+  const useWin = targetWt.worktreePath.includes('\\')
+  const sep = useWin ? '\\' : '/'
+  const isolatedDirName = `${targetWt.repoAlias}-isolated`
+  const parentDir = useWin
+    ? path.win32.dirname(targetWt.worktreePath)
+    : path.posix.dirname(targetWt.worktreePath)
+  const isolatedPath =
+    parentDir && parentDir !== '.'
+      ? `${parentDir === '/' ? '' : parentDir}${sep}${isolatedDirName}`
+      : `..${sep}${isolatedDirName}`
+
+  const baseRef = safeToken(targetWt.branch) || safeToken(targetWt.headSha) || 'HEAD'
+  const branchPrefix = safeToken(targetWt.branch) ? targetWt.branch : targetWt.repoAlias
+  const isolatedBranch = `${branchPrefix}-isolated`
+
+  const worktreeAddCmd = `git -C ${quoteArg(targetWt.repoPath)} worktree add -b ${quoteArg(isolatedBranch)} ${quoteArg(isolatedPath)} ${quoteArg(baseRef)}`
+
+  const isolatedWt: WorktreeNode = {
+    ...targetWt,
+    id: `${targetWt.repoAlias}:${isolatedDirName}`,
+    relPath: isolatedDirName,
+    worktreePath: isolatedPath,
+    branch: isolatedBranch,
+    dirtyCount: 0,
+    agentStatus: { isActive: false },
+  }
+
+  const relinkCmds: string[] = []
+  const seenCmds = new Set<string>()
+  for (const link of links) {
+    const cmd = resolveFixCommandForLink(link, isolatedWt, true)
+    if (isExecutableFix(cmd) && !seenCmds.has(cmd)) {
+      seenCmds.add(cmd)
+      relinkCmds.push(cmd)
+    }
+  }
+
+  return [worktreeAddCmd, ...relinkCmds].join(' && ')
+}
+
+function buildSharedEnvFixCommand(wt: WorktreeNode, env: SharedEnvInfo): string {
+  const useWin = wt.worktreePath.includes('\\')
+  const envPath = useWin
+    ? path.win32.join(wt.worktreePath, env.envName)
+    : path.posix.join(wt.worktreePath, env.envName)
+  const unlinkCmd = isWin ? `cmd /c rmdir ${quoteArg(envPath)}` : `rm -rf ${quoteArg(envPath)}`
+
+  if (env.ecosystem === 'node') {
+    return `${unlinkCmd} && npm install`
+  }
+  if (env.ecosystem === 'python') {
+    return `${unlinkCmd} && python -m venv ${quoteArg(envPath)}`
+  }
+  const mkdirCmd = isWin ? `mkdir ${quoteArg(envPath)}` : `mkdir -p ${quoteArg(envPath)}`
+  return `${unlinkCmd} && ${mkdirCmd}`
+}
+
+function buildExternalTargetSnippet(link: JunctionLink): string {
+  const normalizedPath = link.targetRealPath.replace(/\\/g, '/')
+  const rawBase = path.posix.basename(normalizedPath.replace(/\/+$/, ''))
+  const alias = rawBase || link.packageName.replace(/^@[^/]+\//, '') || 'external-repo'
+  const snippet = JSON.stringify({
+    alias: commentSafe(alias),
+    path: commentSafe(normalizedPath),
+  })
+  return `# banyan.config.json "repos": ${snippet}`
 }
 
 export function detectCollisions(
@@ -75,7 +165,7 @@ export function detectCollisions(
         message: `Cross-contamination: ${uniqueSourceWts.join(', ')} share a local dependency on [${targetWt.id} (${targetWt.branch})], which ${stateDesc}.`,
         messageEs: `Contaminación cruzada: ${uniqueSourceWts.join(', ')} comparten dependencia local hacia [${targetWt.id} (${targetWt.branch})], el cual ${stateDescEs}.`,
         affectedWorktreeIds: [targetId, ...uniqueSourceWts],
-        suggestedFixCommand: `git -C ${quoteArg(targetWt.repoPath)} worktree add ${quoteArg(`../${targetWt.repoAlias}-isolated`)}`,
+        suggestedFixCommand: buildMultiConsumerIsolateAndRelinkCommand(targetWt, links),
       })
     }
   }
@@ -133,6 +223,7 @@ export function detectCollisions(
           message: `Shared environment (${env.envName}): [${wt.id}] shares ${env.envName} with [${hostWt.id}] while there is agent activity or pending changes.`,
           messageEs: `Entorno compartido (${env.envName}): [${wt.id}] comparte ${env.envName} con [${hostWt.id}] mientras hay actividad o cambios pendientes.`,
           affectedWorktreeIds: [wt.id, hostWt.id],
+          suggestedFixCommand: buildSharedEnvFixCommand(wt, env),
         })
       }
     }
@@ -148,6 +239,7 @@ export function detectCollisions(
         message: `Package "${link.packageName}" in [${link.sourceWorktreeId}] points to a folder outside the monitored worktrees (${link.targetRealPath}).`,
         messageEs: `El paquete "${link.packageName}" en [${link.sourceWorktreeId}] apunta a una carpeta fuera de los worktrees monitoreados (${link.targetRealPath}).`,
         affectedWorktreeIds: [link.sourceWorktreeId],
+        suggestedFixCommand: buildExternalTargetSnippet(link),
       })
     }
   }

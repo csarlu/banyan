@@ -2,6 +2,7 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import { EcosystemSnapshot } from '../../core/types.js'
 import { getEcosystemColor, getEcosystemIcon } from '../../core/adapters/index.js'
+import { isExecutableFix } from '../../core/shellSafe.js'
 import { ThemePalette } from '../theme.js'
 import { DICTIONARIES, Locale } from '../../i18n/index.js'
 import { localizeWarningMessage } from '../../i18n/messages.js'
@@ -140,7 +141,7 @@ export const HealthTab: React.FC<Props> = ({
             const isCrit = warn.severity === 'critical'
             const sevColor = isCrit ? theme.critical : theme.warning
             const sevIcon = isCrit ? UI_ICONS.critical : UI_ICONS.warning
-            const fixBadge = warn.suggestedFixCommand ? `${UI_ICONS.bulb} ` : ''
+            const fixBadge = isExecutableFix(warn.suggestedFixCommand) ? `${UI_ICONS.bulb} ` : ''
 
             const ruleCell = `${sevIcon} ${warn.type}`
             const wtCell = `${fixBadge}${warn.affectedWorktreeIds.map(formatWorktreeIdString).join(', ')}`
@@ -283,27 +284,54 @@ export const HealthTab: React.FC<Props> = ({
 
             {/* 3. Auto-Fix Console */}
             <Text color={theme.secondary} bold>
-              {fitCell(`${UI_ICONS.bulb} ${t.fix.trim()}`, rightInnerWidth, 'left')}
+              {fitCell(
+                isExecutableFix(selectedWarn.suggestedFixCommand)
+                  ? `${UI_ICONS.bulb} ${t.fix.trim()}`
+                  : `${UI_ICONS.info} ${locale === 'es' ? 'Pista / Snippet Sugerido:' : 'Suggested Hint / Snippet:'}`,
+                rightInnerWidth,
+                'left',
+              )}
             </Text>
             {selectedWarn.suggestedFixCommand ? (
-              <>
-                {wrapCellLines(
-                  `$ ${formatShortPath(selectedWarn.suggestedFixCommand)}`,
-                  rightInnerWidth - 2,
-                  2,
-                ).map((cmdLine, cIdx) => (
-                  <Text key={`cmd-${cIdx}`} color={theme.accent} bold>
-                    {'  ' + cmdLine}
+              isExecutableFix(selectedWarn.suggestedFixCommand) ? (
+                <>
+                  {wrapCellLines(
+                    `$ ${formatShortPath(selectedWarn.suggestedFixCommand)}`,
+                    rightInnerWidth - 2,
+                    2,
+                  ).map((cmdLine, cIdx) => (
+                    <Text key={`cmd-${cIdx}`} color={theme.accent} bold>
+                      {'  ' + cmdLine}
+                    </Text>
+                  ))}
+                  <Text color={theme.muted}>
+                    {fitCell(
+                      `  ${UI_ICONS.bulb} [f] Auto-Fix   ${UI_ICONS.copy} [y] Copy   ${UI_ICONS.book} [e] ${locale === 'es' ? 'Explicar Regla' : 'Explain Rule'}`,
+                      rightInnerWidth,
+                      'left',
+                    )}
                   </Text>
-                ))}
-                <Text color={theme.muted}>
-                  {fitCell(
-                    `  ${UI_ICONS.bulb} [f] Auto-Fix   ${UI_ICONS.copy} [y] Copy   ${UI_ICONS.book} [e] ${locale === 'es' ? 'Explicar Regla' : 'Explain Rule'}`,
-                    rightInnerWidth,
-                    'left',
-                  )}
-                </Text>
-              </>
+                </>
+              ) : (
+                <>
+                  {wrapCellLines(
+                    formatShortPath(selectedWarn.suggestedFixCommand),
+                    rightInnerWidth - 2,
+                    2,
+                  ).map((cmdLine, cIdx) => (
+                    <Text key={`cmd-${cIdx}`} color={theme.warning} bold>
+                      {'  ' + cmdLine}
+                    </Text>
+                  ))}
+                  <Text color={theme.muted}>
+                    {fitCell(
+                      `  ${UI_ICONS.copy} [y] Copy   ${UI_ICONS.gear} [c] Config   ${UI_ICONS.book} [e] ${locale === 'es' ? 'Explicar Regla' : 'Explain Rule'}`,
+                      rightInnerWidth,
+                      'left',
+                    )}
+                  </Text>
+                </>
+              )
             ) : (
               <Text color={theme.muted}>
                 {fitCell(

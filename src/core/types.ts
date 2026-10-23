@@ -108,6 +108,8 @@ export interface JunctionLink {
   packageName: string
   linkPath: string
   targetRealPath: string
+  rawTarget?: string
+  targetSubpath?: string
   targetWorktreeId?: string
   targetRepoAlias?: string
   targetBranch?: string

@@ -2,12 +2,15 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../types.js'
-import { commentSafe, quoteArg } from '../shellSafe.js'
+import { buildFileReplaceCommand, commentSafe, quoteArg } from '../shellSafe.js'
 import {
+  computeTargetSubpath,
   EcosystemAdapter,
   inspectFolderSharedEnv,
   pathExists,
+  resolveNewTargetPath,
   resolvePathToWorktree,
+  resolveReplacementStrings,
 } from './types.js'
 
 export interface ParsedPythonLink {
@@ -180,6 +183,8 @@ async function createResolvedPythonLink(
     packageName,
     linkPath,
     targetRealPath,
+    rawTarget: rawTargetPath,
+    targetSubpath: computeTargetSubpath(exists ? targetRealPath : resolvedTarget, matchedWorktree),
     targetWorktreeId: matchedWorktree?.id,
     targetRepoAlias: matchedWorktree?.repoAlias,
     targetBranch: matchedWorktree?.branch,
@@ -511,9 +516,52 @@ export const pythonAdapter: EcosystemAdapter = {
   },
 
   buildFixCommand(link: JunctionLink, newTargetWorktree: WorktreeNode): string {
+    const newTarget = resolveNewTargetPath(link, newTargetWorktree)
+    const manifestOrLink = (link.manifestFile || link.linkPath || '').replace(/\\/g, '/')
+
     if (link.mechanism === 'pythonpath-override') {
-      return `# Update PYTHONPATH / sys.path in "${commentSafe(link.manifestFile || link.linkPath)}" to "${commentSafe(newTargetWorktree.worktreePath)}"`
+      const isEnvOrSettings =
+        manifestOrLink === '.env' ||
+        manifestOrLink === '.envrc' ||
+        manifestOrLink === '.vscode/settings.json' ||
+        manifestOrLink.endsWith('/.env') ||
+        manifestOrLink.endsWith('/.envrc') ||
+        manifestOrLink.endsWith('/.vscode/settings.json')
+
+      if (isEnvOrSettings) {
+        const targetFile = link.linkPath || link.manifestFile || '.env'
+        const { oldStr, newStr } = resolveReplacementStrings(link, newTargetWorktree)
+        const fallback = `Update PYTHONPATH / extraPaths in "${link.manifestFile || link.linkPath}" to "${newTarget}"`
+        return buildFileReplaceCommand(targetFile, oldStr, newStr, fallback)
+      }
+
+      return `# Update PYTHONPATH / sys.path in "${commentSafe(link.manifestFile || link.linkPath)}" to "${commentSafe(newTarget)}"`
     }
-    return `pip install -e ${quoteArg(newTargetWorktree.worktreePath)}`
+
+    if (manifestOrLink.endsWith('.pth') || manifestOrLink.endsWith('.egg-link')) {
+      const targetFile = link.linkPath || link.manifestFile || ''
+      const { oldStr, newStr } = resolveReplacementStrings(link, newTargetWorktree)
+      const fallback = `Update "${link.manifestFile || link.linkPath}" to "${newTarget}"`
+      return buildFileReplaceCommand(targetFile, oldStr, newStr, fallback)
+    }
+
+    const venvDirName =
+      manifestOrLink.startsWith('venv/') || manifestOrLink.includes('/venv/') ? 'venv' : '.venv'
+    const useWin =
+      (link.sourceWorktreePath && link.sourceWorktreePath.includes('\\')) ||
+      (!link.sourceWorktreePath && process.platform === 'win32')
+    const relBin =
+      process.platform === 'win32'
+        ? useWin
+          ? `${venvDirName}\\Scripts\\python.exe`
+          : `${venvDirName}/Scripts/python.exe`
+        : `${venvDirName}/bin/python`
+    const pythonBin = link.sourceWorktreePath
+      ? useWin
+        ? path.win32.join(link.sourceWorktreePath, relBin.replace(/\//g, '\\'))
+        : path.posix.join(link.sourceWorktreePath, relBin.replace(/\\/g, '/'))
+      : relBin
+
+    return `${quoteArg(pythonBin)} -m pip install -e ${quoteArg(newTarget)}`
   },
 }
