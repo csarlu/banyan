@@ -14,6 +14,7 @@ interface Props {
   theme: ThemePalette
   locale: Locale
   columns?: number
+  isMuxActive?: boolean
 }
 
 export const StatusBar: React.FC<Props> = ({
@@ -25,6 +26,7 @@ export const StatusBar: React.FC<Props> = ({
   theme,
   locale,
   columns = 120,
+  isMuxActive = false,
 }) => {
   const t = DICTIONARIES[locale]
   const criticalCount = snapshot?.warnings.filter((w) => w.severity === 'critical').length ?? 0
@@ -134,7 +136,14 @@ export const StatusBar: React.FC<Props> = ({
         <Box flexShrink={1} overflow="hidden">
           <Text color={theme.muted} wrap="truncate-end">
             {fitCell(
-              t.status.help,
+              isMuxActive
+                ? t.status.help.replace(
+                    locale === 'es' ? '[Enter] Ir(cd)' : '[Enter] Jump(cd)',
+                    locale === 'es'
+                      ? '[Enter/w] Ventana  [s] Split'
+                      : '[Enter/w] Window  [s] Split',
+                  )
+                : t.status.help,
               statusMessage ? Math.max(20, innerWidth - statusMessage.length - 4) : innerWidth,
               'left',
             )}

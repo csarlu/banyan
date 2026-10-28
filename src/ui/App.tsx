@@ -12,7 +12,12 @@ import { copyToClipboard } from '../core/clipboard.js'
 import { executeFixCommand } from '../core/fixRunner.js'
 import { isExecutableFix } from '../core/shellSafe.js'
 import { createWorktreeWithStrategy } from '../core/worktreeCreator.js'
-import { getMuxBinaryName, openMuxSplit, openMuxWindow } from '../integrations/mux.js'
+import {
+  getMuxBinaryName,
+  openMuxSplit,
+  openMuxWindow,
+  isInMuxSession,
+} from '../integrations/mux.js'
 import { muxInstallHint } from '../core/prerequisites.js'
 import { BANYAN_VERSION } from '../version.js'
 import { BanyanSplash } from './Splash.js'
@@ -160,7 +165,7 @@ export const App: React.FC<Props> = ({
     locale === 'es'
       ? `⚠ ${muxName} no disponible. Instálalo con: ${muxInstallHint(process.platform)}`
       : `⚠ ${muxName} unavailable. Install it with: ${muxInstallHint(process.platform)}`
-  const isMuxActive = useMemo(() => Boolean(process.env.TMUX || process.env.TMUX_PANE), [])
+  const isMuxActive = useMemo(() => isInMuxSession(), [])
 
   const handleOpenConfigEditor = useCallback(
     async (targetMode: OpenEditorTarget = 'inline') => {
@@ -305,8 +310,19 @@ export const App: React.FC<Props> = ({
         if (activeTab === 1 && worktrees.length > 0) {
           const chosen = worktrees[selectedIndex]
           if (chosen && !chosen.isBare) {
-            onSelectWorktreeForCd?.(chosen.worktreePath)
-            exit()
+            if (isMuxActive) {
+              const ok = await openMuxWindow(chosen.worktreePath, chosen.id)
+              setStatusMessage(
+                ok
+                  ? locale === 'es'
+                    ? `✔ Ventana ${muxName}: ${chosen.id}`
+                    : `✔ ${muxName} window: ${chosen.id}`
+                  : muxUnavailableMsg,
+              )
+            } else {
+              onSelectWorktreeForCd?.(chosen.worktreePath)
+              exit()
+            }
           }
         }
         return
@@ -557,8 +573,19 @@ export const App: React.FC<Props> = ({
       } else if (key.return) {
         const chosen = worktrees[selectedIndex]
         if (chosen && !chosen.isBare) {
-          onSelectWorktreeForCd?.(chosen.worktreePath)
-          exit()
+          if (isMuxActive) {
+            const ok = await openMuxWindow(chosen.worktreePath, chosen.id)
+            setStatusMessage(
+              ok
+                ? locale === 'es'
+                  ? `✔ Ventana ${muxName}: ${chosen.id}`
+                  : `✔ ${muxName} window: ${chosen.id}`
+                : muxUnavailableMsg,
+            )
+          } else {
+            onSelectWorktreeForCd?.(chosen.worktreePath)
+            exit()
+          }
         }
       } else if (input === 's') {
         const chosen = worktrees[selectedIndex]
@@ -852,6 +879,7 @@ export const App: React.FC<Props> = ({
         theme={theme}
         locale={locale}
         columns={columns}
+        isMuxActive={isMuxActive}
       />
     </Box>
   )

@@ -28,7 +28,7 @@ import { App } from './ui/App.js'
 import { ThemeName } from './ui/theme.js'
 import { detectDefaultLocale, Locale } from './i18n/index.js'
 import { getMessages } from './i18n/messages.js'
-import { setupPolyglotPlayground } from './core/playground.js'
+import { setupPolyglotPlayground, cleanPlaygrounds } from './core/playground.js'
 import { WorkspaceConfig, BanyanConfig } from './core/types.js'
 
 const HELP_EN = `
@@ -44,6 +44,8 @@ const HELP_EN = `
     --doctor          Step-by-step pedagogical audit of the ecosystem (exit code 2 on critical alerts)
     --workspace, -w   Workspace name from banyan.config.json
     --playground, -p  Create and open an interactive polyglot playground (Go, Rust, .NET, Python, Node)
+    --rm              Remove playground directory automatically on exit (used with --playground)
+    --clean-playground Clean up temporary playground directories from disk
     --status, -s      Headless status table report
     --tutorial        Start directly in the interactive tutorial & simulator
     --config, -c      Open banyan.config.json in Neovim or your default editor
@@ -63,6 +65,8 @@ const HELP_EN = `
   Examples
     $ bny                         Open the interactive TUI dashboard
     $ bny --playground            Launch a full polyglot sandbox for tests and demos
+    $ bny --playground --rm       Launch an ephemeral sandbox (auto-deleted on exit)
+    $ bny --clean-playground      Clean up all temporary playground directories
     $ bny -c                      Open banyan.config.json in Neovim / editor
     $ bny --init-shell            Print the shell wrapper to change directory on Enter
     $ bny --agent-context         Situational briefing for the LLM in the current worktree
@@ -97,6 +101,8 @@ const HELP_ES = `
     --doctor          Auditoría pedagógica paso a paso del ecosistema (exit code 2 si hay alertas críticas)
     --workspace, -w   Nombre del workspace en banyan.config.json
     --playground, -p  Crea y abre un playground políglota interactivo (Go, Rust, .NET, Python, Node)
+    --rm              Elimina el directorio del playground automáticamente al salir (usar con --playground)
+    --clean-playground Limpia los directorios temporales de playground del disco
     --status, -s      Tabla de estado en modo headless
     --tutorial        Arranca directamente en el tutorial interactivo y simulador
     --config, -c      Abre banyan.config.json en Neovim o tu editor predeterminado
@@ -116,6 +122,8 @@ const HELP_ES = `
   Ejemplos
     $ bny                         Abre el panel TUI interactivo
     $ bny --playground            Lanza sandbox políglota completo para pruebas y demos
+    $ bny --playground --rm       Lanza sandbox efímero (auto-eliminado al salir)
+    $ bny --clean-playground      Limpia todos los directorios temporales de playground
     $ bny -c                      Abre banyan.config.json en Neovim / editor
     $ bny --init-shell            Imprime el wrapper de shell para cambiar de carpeta al pulsar Enter
     $ bny --agent-context         Briefing situacional para el LLM en el worktree actual
@@ -163,6 +171,9 @@ const cli = meow(resolveHelpLocale() === 'es' ? HELP_ES : HELP_EN, {
     doctor: { type: 'boolean', default: false },
     workspace: { type: 'string', shortFlag: 'w' },
     playground: { type: 'boolean', shortFlag: 'p', default: false },
+    cleanPlayground: { type: 'boolean', default: false },
+    cleanPlaygrounds: { type: 'boolean', default: false },
+    rm: { type: 'boolean', default: false },
     status: { type: 'boolean', shortFlag: 's', default: false },
     tutorial: { type: 'boolean', default: false },
     config: { type: 'boolean', shortFlag: 'c', default: false },
@@ -317,9 +328,31 @@ async function main() {
     process.exit(0)
   }
 
-  // --doctor reports missing requirements itself instead of bailing out early.
-  if (!cli.flags.doctor) {
+  const isCleanPlayground = Boolean(cli.flags.cleanPlayground || cli.flags.cleanPlaygrounds)
+
+  // --doctor and --clean-playground report/execute themselves without requiring git upfront.
+  if (!cli.flags.doctor && !isCleanPlayground) {
     await ensureGitAvailable(baseCwd)
+  }
+
+  if (isCleanPlayground) {
+    const cleanLocale = await resolveLocaleSafe(baseCwd)
+    const pcm = getMessages(cleanLocale).cli
+    const result = await cleanPlaygrounds(cli.flags.cwd)
+    if (result.cleaned.length === 0) {
+      process.stderr.write(pcm.playgroundNoneFound + '\n')
+    } else {
+      process.stderr.write(pcm.playgroundCleaned(result.cleaned.length) + '\n')
+      for (const dir of result.cleaned) {
+        process.stderr.write(`   - ${dir}\n`)
+      }
+    }
+    if (result.failed.length > 0) {
+      for (const f of result.failed) {
+        process.stderr.write(`   ⚠️ ${f.dir}: ${f.error}\n`)
+      }
+    }
+    process.exit(0)
   }
 
   if (cli.flags.playground) {
@@ -338,6 +371,17 @@ async function main() {
     if (process.stderr.isTTY) {
       process.stderr.write('\x1b[?1049h\x1b[2J\x1b[H')
     }
+
+    let cleanedUp = false
+    const onSignal = async () => {
+      if (cli.flags.rm && !cleanedUp) {
+        cleanedUp = true
+        await pg.cleanup().catch(() => {})
+      }
+      process.exit(130)
+    }
+    process.once('SIGINT', onSignal)
+    process.once('SIGTERM', onSignal)
 
     try {
       const instance = render(
@@ -362,9 +406,18 @@ async function main() {
 
       await instance.waitUntilExit()
     } finally {
+      process.removeListener('SIGINT', onSignal)
+      process.removeListener('SIGTERM', onSignal)
       if (process.stderr.isTTY) {
         process.stderr.write('\x1b[?1049l')
       }
+    }
+
+    if (cli.flags.rm) {
+      cleanedUp = true
+      await pg.cleanup()
+      process.stderr.write(pcm.playgroundAutoCleaned(pg.playgroundDir))
+      process.exit(0)
     }
 
     if (selectedCdPath) {

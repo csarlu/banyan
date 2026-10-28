@@ -40,7 +40,14 @@ export const MESSAGES = {
       playgroundReady: (dir: string) => `✔ Playground initialized at: ${dir}`,
       playgroundEcosystems: '✔ Ecosystems ready: Node, Python, Go, Rust, .NET, Raw',
       playgroundDone: (dir: string) =>
-        `\n✨ Playground session finished.\nDirectory preserved for inspection: ${dir}\n`,
+        `\n✨ Playground session finished.\n` +
+        `Directory preserved for inspection: ${dir}\n` +
+        `💡 Tip: Run 'bny --clean-playground' to remove playgrounds, or 'bny -p --rm' for ephemeral sessions.\n`,
+      playgroundCleaned: (count: number) =>
+        `✔ Cleaned ${count} polyglot playground ${count === 1 ? 'directory' : 'directories'}.`,
+      playgroundNoneFound: 'ℹ️ No active polyglot playground directories found to clean.',
+      playgroundAutoCleaned: (dir: string) =>
+        `\n✨ Ephemeral playground session finished.\n✔ Cleaned temporary directory: ${dir}\n`,
       guardOk: '✅ Banyan Guard: Worktree isolated and healthy.',
       gitMissing: (hint: string) =>
         `❌ git was not found on your PATH.\n` +
@@ -90,7 +97,14 @@ export const MESSAGES = {
       playgroundReady: (dir: string) => `✔ Playground inicializado en: ${dir}`,
       playgroundEcosystems: '✔ Ecosistemas listos: Node, Python, Go, Rust, .NET, Raw',
       playgroundDone: (dir: string) =>
-        `\n✨ Sesión de Playground finalizada.\nDirectorio preservado para inspección: ${dir}\n`,
+        `\n✨ Sesión de Playground finalizada.\n` +
+        `Directorio preservado para inspección: ${dir}\n` +
+        `💡 Consejo: Usa 'bny --clean-playground' para eliminar playgrounds, o 'bny -p --rm' para sesiones efímeras.\n`,
+      playgroundCleaned: (count: number) =>
+        `✔ Se ${count === 1 ? 'ha eliminado' : 'han eliminado'} ${count} ${count === 1 ? 'directorio' : 'directorios'} de playground políglota.`,
+      playgroundNoneFound: 'ℹ️ No se encontraron directorios de playground políglota para limpiar.',
+      playgroundAutoCleaned: (dir: string) =>
+        `\n✨ Sesión de Playground efímera finalizada.\n✔ Directorio temporal eliminado: ${dir}\n`,
       guardOk: '✅ Banyan Guard: Worktree aislado y saludable.',
       gitMissing: (hint: string) =>
         `❌ No se encontró git en el PATH.\n` +

@@ -10,6 +10,8 @@ import {
   createDirLink,
   setupPolyglotPlayground,
   PolyglotPlayground,
+  findPlaygroundDirs,
+  cleanPlaygrounds,
 } from '../src/core/playground.js'
 import { WorkspaceConfig } from '../src/core/types.js'
 
@@ -532,5 +534,26 @@ describe('Polyglot Playground (bny --playground)', () => {
     expect(warningTypes.has('BRANCH_MISMATCH')).toBe(true)
     expect(warningTypes.has('BROKEN_LINK')).toBe(true)
     expect(warningTypes.has('SHARED_ENV_DIRTY')).toBe(true)
+  })
+
+  it('discovers and cleans up playground directories on demand (bny --clean-playground)', async () => {
+    const tempPg = await setupPolyglotPlayground()
+    const pgDir = tempPg.playgroundDir
+
+    // Directory exists and is found
+    const discoveredBefore = await findPlaygroundDirs()
+    expect(discoveredBefore).toContain(pgDir)
+
+    // Specific cleanup
+    const cleanSpecific = await cleanPlaygrounds(pgDir)
+    expect(cleanSpecific.cleaned).toContain(pgDir)
+    expect(cleanSpecific.failed).toHaveLength(0)
+
+    // Directory no longer exists
+    await expect(fs.stat(pgDir)).rejects.toThrow()
+
+    // Subsequent search for custom dir returns empty
+    const discoveredAfter = await findPlaygroundDirs(pgDir)
+    expect(discoveredAfter).toHaveLength(0)
   })
 })

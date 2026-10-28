@@ -126,6 +126,12 @@ bny
 
 # Want to see Banyan in action right now? Launch the 5-language interactive sandbox:
 bny --playground
+
+# Or launch an ephemeral sandbox that cleans itself up automatically on exit:
+bny --playground --rm
+
+# Clean up all sandbox playground directories from disk at any time:
+bny --clean-playground
 ```
 
 <details>

@@ -8,7 +8,12 @@ export function getMuxBinaryName(): 'psmux' | 'tmux' {
 }
 
 export function isInMuxSession(): boolean {
-  return Boolean(process.env.TMUX || process.env.TMUX_PANE)
+  return Boolean(
+    process.env.TMUX ||
+    process.env.TMUX_PANE ||
+    process.env.PSMUX_SESSION ||
+    process.env.PSMUX_SESSION_NAME,
+  )
 }
 
 export function isWindowsTerminalAvailable(): boolean {
@@ -18,6 +23,16 @@ export function isWindowsTerminalAvailable(): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+export function getPowerShellBinary(): string {
+  if (process.platform !== 'win32') return 'powershell'
+  try {
+    execSync('where pwsh', { stdio: 'ignore' })
+    return 'pwsh'
+  } catch {
+    return 'powershell'
   }
 }
 
@@ -60,14 +75,21 @@ export async function openMuxSplit(
   try {
     const flag = direction === 'h' ? '-h' : '-v'
     const args = ['split-window', flag, '-c', targetPath]
-    if (command) {
-      if (bin === 'psmux') {
-        args.push('--')
-      }
-      if (Array.isArray(command)) {
-        args.push(...command)
+    if (bin === 'psmux') {
+      const psBin = getPowerShellBinary()
+      if (command) {
+        const cmdStr = Array.isArray(command) ? command.join(' ') : command
+        args.push('--', psBin, '-NoExit', '-Command', cmdStr)
       } else {
-        args.push(command)
+        args.push('--', psBin, '-NoExit')
+      }
+    } else {
+      if (command) {
+        if (Array.isArray(command)) {
+          args.push(...command)
+        } else {
+          args.push(command)
+        }
       }
     }
     await execFileAsync(bin, args, {
@@ -90,14 +112,21 @@ export async function openMuxWindow(
     if (windowName) {
       args.push('-n', windowName)
     }
-    if (command) {
-      if (bin === 'psmux') {
-        args.push('--')
-      }
-      if (Array.isArray(command)) {
-        args.push(...command)
+    if (bin === 'psmux') {
+      const psBin = getPowerShellBinary()
+      if (command) {
+        const cmdStr = Array.isArray(command) ? command.join(' ') : command
+        args.push('--', psBin, '-NoExit', '-Command', cmdStr)
       } else {
-        args.push(command)
+        args.push('--', psBin, '-NoExit')
+      }
+    } else {
+      if (command) {
+        if (Array.isArray(command)) {
+          args.push(...command)
+        } else {
+          args.push(command)
+        }
       }
     }
     await execFileAsync(bin, args, { windowsHide: true })

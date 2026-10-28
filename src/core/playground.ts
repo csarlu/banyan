@@ -42,6 +42,8 @@ export interface PolyglotPlayground {
   cleanup: () => Promise<void>
 }
 
+export const PLAYGROUND_DIR_PREFIX = 'banyan-polyglot-playground-'
+
 /**
  * Creates an exhaustive polyglot git ecosystem on disk containing:
  * - Node: npm workspaces / node_modules junctions with scoped package and branch mismatch
@@ -56,7 +58,7 @@ export async function setupPolyglotPlayground(
 ): Promise<PolyglotPlayground> {
   const playgroundDir = customRoot
     ? path.resolve(customRoot)
-    : await fs.mkdtemp(path.join(os.tmpdir(), 'banyan-polyglot-playground-'))
+    : await fs.mkdtemp(path.join(os.tmpdir(), PLAYGROUND_DIR_PREFIX))
 
   await fs.mkdir(playgroundDir, { recursive: true })
 
@@ -471,15 +473,74 @@ export async function setupPolyglotPlayground(
     workspaceName: 'polyglot-playground',
     workspaceConfig,
     cleanup: async () => {
-      await fs.rm(playgroundDir, { recursive: true, force: true })
+      await cleanupPlayground(playgroundDir)
     },
   }
 }
 
 export async function cleanupPlayground(playgroundDir: string): Promise<void> {
   if (playgroundDir) {
-    await fs.rm(playgroundDir, { recursive: true, force: true })
+    await fs.rm(playgroundDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    })
   }
+}
+
+/**
+ * Finds playground directories on disk.
+ * If customRoot is supplied, checks whether customRoot exists and is a directory.
+ * Otherwise, scans os.tmpdir() for directories starting with PLAYGROUND_DIR_PREFIX.
+ */
+export async function findPlaygroundDirs(customRoot?: string): Promise<string[]> {
+  if (customRoot) {
+    const resolved = path.resolve(customRoot)
+    try {
+      const stat = await fs.stat(resolved)
+      if (stat.isDirectory()) {
+        return [resolved]
+      }
+    } catch {
+      return []
+    }
+  }
+
+  const tmpDir = os.tmpdir()
+  try {
+    const entries = await fs.readdir(tmpDir, { withFileTypes: true })
+    return entries
+      .filter((e) => e.isDirectory() && e.name.startsWith(PLAYGROUND_DIR_PREFIX))
+      .map((e) => path.join(tmpDir, e.name))
+  } catch {
+    return []
+  }
+}
+
+export interface CleanPlaygroundsResult {
+  cleaned: string[]
+  failed: { dir: string; error: string }[]
+}
+
+/**
+ * Removes temporary playground directories from disk.
+ */
+export async function cleanPlaygrounds(customRoot?: string): Promise<CleanPlaygroundsResult> {
+  const dirs = await findPlaygroundDirs(customRoot)
+  const cleaned: string[] = []
+  const failed: { dir: string; error: string }[] = []
+
+  for (const dir of dirs) {
+    try {
+      await cleanupPlayground(dir)
+      cleaned.push(dir)
+    } catch (err) {
+      failed.push({ dir, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  return { cleaned, failed }
 }
 
 function playgroundReadme(locale: Locale): string {
