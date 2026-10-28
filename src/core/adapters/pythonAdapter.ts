@@ -116,6 +116,8 @@ export function parseEnvPythonPath(envContent: string): string[] {
 
 async function findSitePackagesDirs(
   worktreePath: string,
+  sourceWorktree: WorktreeNode,
+  allWorktrees: WorktreeNode[],
 ): Promise<{ spDir: string; candidateRoot: string }[]> {
   const dirs: { spDir: string; candidateRoot: string }[] = []
   const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
@@ -123,7 +125,18 @@ async function findSitePackagesDirs(
   for (const candidateRoot of candidateRoots) {
     for (const venvName of ['.venv', 'venv']) {
       const venvRoot = path.join(candidateRoot, venvName)
-      if (!(await pathExists(venvRoot))) continue
+      try {
+        const venvStat = await fs.lstat(venvRoot)
+        if (venvStat.isSymbolicLink()) {
+          const venvReal = await fs.realpath(venvRoot).catch(() => '')
+          const hostWt = venvReal ? resolvePathToWorktree(venvReal, allWorktrees) : undefined
+          if (hostWt && hostWt.id !== sourceWorktree.id) {
+            continue
+          }
+        }
+      } catch {
+        continue
+      }
 
       // Windows layout: .venv/Lib/site-packages
       const winSp = path.join(venvRoot, 'Lib', 'site-packages')
@@ -395,7 +408,7 @@ export const pythonAdapter: EcosystemAdapter = {
       }
     }
 
-    const spDirs = await findSitePackagesDirs(worktree.worktreePath)
+    const spDirs = await findSitePackagesDirs(worktree.worktreePath, worktree, allWorktrees)
     for (const { spDir, candidateRoot } of spDirs) {
       let entries: import('node:fs').Dirent[] = []
       try {

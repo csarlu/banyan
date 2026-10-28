@@ -152,7 +152,9 @@ export function generateAgentBriefing(
   let exitCode: 0 | 2 | 3 = 0
   if (myWarnings.some((w) => w.severity === 'critical')) {
     exitCode = 2
-  } else if (myWarnings.some((w) => w.type === 'BRANCH_MISMATCH')) {
+  } else if (
+    myWarnings.some((w) => w.type === 'BRANCH_MISMATCH' || w.type === 'SHARED_ENV_DIRTY')
+  ) {
     exitCode = 3
   }
 

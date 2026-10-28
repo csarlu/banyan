@@ -120,6 +120,22 @@ export const nodeAdapter: EcosystemAdapter = {
 
     for (const rootDir of candidateRoots) {
       const nmPath = path.join(rootDir, 'node_modules')
+      try {
+        const nmStat = await fs.lstat(nmPath)
+        if (nmStat.isSymbolicLink()) {
+          // If node_modules itself is a shared symlink/junction pointing to another worktree,
+          // it is already tracked as a shared environment (SHARED_ENV_DIRTY). Do not attribute
+          // the host worktree's internal workspace links or dependencies to this consumer worktree.
+          const nmReal = await fs.realpath(nmPath).catch(() => '')
+          const hostWt = nmReal ? resolvePathToWorktree(nmReal, allWorktrees) : undefined
+          if (hostWt && hostWt.id !== worktree.id) {
+            continue
+          }
+        }
+      } catch {
+        continue
+      }
+
       let topEntries: import('node:fs').Dirent[] = []
       try {
         topEntries = await fs.readdir(nmPath, { withFileTypes: true })

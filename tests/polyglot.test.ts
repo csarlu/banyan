@@ -763,9 +763,14 @@ describe('Polyglot Monorepo & Subdirectory Layout (BAN-23)', () => {
     const goLink = mainLinks.find((l) => l.packageName === 'example.com/proto')
     expect(goLink?.manifestFile).toBe('services/billing-go/go.mod')
 
-    // 3. Verify SHARED_ENV_DIRTY triggers for monorepo-feat sharing frontend/node_modules
+    // 3. Verify SHARED_ENV_DIRTY triggers for monorepo-feat sharing frontend/node_modules,
+    //    and that monorepo-feat does NOT inherit duplicate package links from the shared node_modules
     const featWt = snapshot.worktrees.find((w) => w.worktreePath === monorepoFeat)
     expect(featWt).toBeDefined()
+    const featLinks = allLinks.filter((l) => l.sourceWorktreeId === featWt!.id)
+    expect(
+      featLinks.filter((l) => l.ecosystem === 'node' && l.mechanism === 'fs-junction'),
+    ).toEqual([])
     const sharedEnvWarn = snapshot.warnings.find(
       (w) => w.type === 'SHARED_ENV_DIRTY' && w.affectedWorktreeIds.includes(featWt!.id),
     )

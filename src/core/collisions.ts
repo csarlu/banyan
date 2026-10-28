@@ -185,7 +185,8 @@ export function detectCollisions(
         (w) =>
           w.repoAlias === targetWt.repoAlias &&
           w.branch === sourceWt.branch &&
-          w.id !== targetWt.id,
+          w.id !== targetWt.id &&
+          w.id !== sourceWt.id,
       )
 
       if (matchingSiblingTarget) {
