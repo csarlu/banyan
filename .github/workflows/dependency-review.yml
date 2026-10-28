@@ -1,6 +1,9 @@
 name: "Dependency Review"
 
-on: [pull_request]
+# GitHub-hosted only: on a private repo without paid Actions and Advanced
+# Security it cannot run, so it is launched by hand.
+on:
+  workflow_dispatch:
 
 permissions:
   contents: read

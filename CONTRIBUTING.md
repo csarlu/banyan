@@ -16,6 +16,14 @@ npm run check
 - `npm run build`: Bundles the ESM CLI via `tsup`.
 - `npm run check`: Runs all three steps in sequence.
 
+### CI
+
+GitHub Actions is off for this repo: the workflows only run when launched by hand. The check on a commit comes from `npm run ci:act`, which runs `.github/workflows/ci.yml` itself with [act](https://github.com/nektos/act) in Linux containers, on a clean clone of `HEAD`, and posts the result to the commit as the status `ci/act (ci.yml)`.
+
+- Run it before pushing; once the commit is on GitHub, `npm run ci:act -- --report` posts the kept result.
+- act only runs Linux: it covers the Ubuntu jobs (Node 20 and 22). The Windows and macOS jobs of the matrix only run on GitHub.
+- It needs `act`, Docker and a logged-in `gh`. Results and logs stay in `.git/ci-act/`.
+
 ## How to Add a New `EcosystemAdapter`
 
 Ecosystem adapters in `src/core/adapters/` only read files from disk and never spawn processes (no `npm`, `pip`, `cargo`, `go` or `dotnet`), which keeps scans fast. Please keep new adapters that way:
