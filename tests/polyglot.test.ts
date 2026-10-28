@@ -643,7 +643,8 @@ describe('Polyglot Monorepo & Subdirectory Layout (BAN-23)', () => {
   let monorepoSandbox = ''
 
   beforeAll(async () => {
-    monorepoSandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'banyan-monorepo-ban23-'))
+    const rawTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'banyan-monorepo-ban23-'))
+    monorepoSandbox = await fs.realpath(rawTmp)
   })
 
   afterAll(async () => {
@@ -742,7 +743,7 @@ describe('Polyglot Monorepo & Subdirectory Layout (BAN-23)', () => {
     }
 
     const snapshot = await buildEcosystemSnapshot('monorepo-test', wsConfig)
-    const mainWt = snapshot.worktrees.find((w) => w.worktreePath === monorepoMain)
+    const mainWt = snapshot.worktrees.find((w) => w.repoAlias === 'monorepo' && w.branch === 'main')
     expect(mainWt).toBeDefined()
 
     // 1. Verify detectedEcosystems includes node, python, go, rust from level 1-2 subdirs
@@ -765,7 +766,9 @@ describe('Polyglot Monorepo & Subdirectory Layout (BAN-23)', () => {
 
     // 3. Verify SHARED_ENV_DIRTY triggers for monorepo-feat sharing frontend/node_modules,
     //    and that monorepo-feat does NOT inherit duplicate package links from the shared node_modules
-    const featWt = snapshot.worktrees.find((w) => w.worktreePath === monorepoFeat)
+    const featWt = snapshot.worktrees.find(
+      (w) => w.repoAlias === 'monorepo' && w.branch === 'feat-ui',
+    )
     expect(featWt).toBeDefined()
     const featLinks = allLinks.filter((l) => l.sourceWorktreeId === featWt!.id)
     expect(
