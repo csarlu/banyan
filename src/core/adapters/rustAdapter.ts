@@ -4,8 +4,10 @@ import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../t
 import { buildFileReplaceCommand } from '../shellSafe.js'
 import {
   computeTargetSubpath,
+  discoverCandidateRoots,
   EcosystemAdapter,
   inspectFolderSharedEnv,
+  isIntraWorktreeLink,
   pathExists,
   resolveNewTargetPath,
   resolvePathToWorktree,
@@ -71,7 +73,13 @@ export const rustAdapter: EcosystemAdapter = {
   label: 'Rust',
 
   async detect(worktreePath: string): Promise<boolean> {
-    return await pathExists(path.join(worktreePath, 'Cargo.toml'))
+    const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
+    for (const rootDir of candidateRoots) {
+      if (await pathExists(path.join(rootDir, 'Cargo.toml'))) {
+        return true
+      }
+    }
+    return false
   },
 
   async inspectSharedEnv(
@@ -91,57 +99,58 @@ export const rustAdapter: EcosystemAdapter = {
 
     const links: JunctionLink[] = []
     const wtPath = worktree.worktreePath
-    const normSelf = path.resolve(wtPath).toLowerCase()
+    const candidateRoots = await discoverCandidateRoots(wtPath, 2)
 
-    const candidateFiles = [
-      { full: path.join(wtPath, 'Cargo.toml'), rel: 'Cargo.toml' },
-      { full: path.join(wtPath, '.cargo', 'config.toml'), rel: '.cargo/config.toml' },
-      { full: path.join(wtPath, '.cargo', 'config'), rel: '.cargo/config' },
-    ]
+    for (const candidateRoot of candidateRoots) {
+      const candidateFiles = [
+        path.join(candidateRoot, 'Cargo.toml'),
+        path.join(candidateRoot, '.cargo', 'config.toml'),
+        path.join(candidateRoot, '.cargo', 'config'),
+      ]
 
-    for (const fileInfo of candidateFiles) {
-      if (!(await pathExists(fileInfo.full))) continue
-      try {
-        const content = await fs.readFile(fileInfo.full, 'utf-8')
-        const parsedDeps = parseCargoTomlPaths(content)
-        for (const dep of parsedDeps) {
-          const resolvedTarget = path.resolve(wtPath, dep.targetPath)
-          const normTarget = resolvedTarget.toLowerCase()
-          if (normTarget === normSelf || normTarget.startsWith(normSelf + path.sep)) {
-            continue
-          }
-
-          const exists = await pathExists(resolvedTarget)
-          let targetRealPath = resolvedTarget
-          if (exists) {
-            try {
-              targetRealPath = await fs.realpath(resolvedTarget)
-            } catch {
-              targetRealPath = resolvedTarget
+      for (const fullFilePath of candidateFiles) {
+        if (!(await pathExists(fullFilePath))) continue
+        try {
+          const content = await fs.readFile(fullFilePath, 'utf-8')
+          const parsedDeps = parseCargoTomlPaths(content)
+          const relManifest = path.relative(wtPath, fullFilePath).replace(/\\/g, '/')
+          for (const dep of parsedDeps) {
+            const resolvedTarget = path.resolve(candidateRoot, dep.targetPath)
+            const exists = await pathExists(resolvedTarget)
+            let targetRealPath = resolvedTarget
+            if (exists) {
+              try {
+                targetRealPath = await fs.realpath(resolvedTarget)
+              } catch {
+                targetRealPath = resolvedTarget
+              }
             }
-          }
-          const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+            const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+            if (isIntraWorktreeLink(targetRealPath, worktree, matchedWt, !exists)) {
+              continue
+            }
 
-          links.push({
-            sourceWorktreeId: worktree.id,
-            sourceWorktreePath: wtPath,
-            packageName: dep.crateName,
-            linkPath: fileInfo.full,
-            targetRealPath,
-            rawTarget: dep.targetPath,
-            targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
-            targetWorktreeId: matchedWt?.id,
-            targetRepoAlias: matchedWt?.repoAlias,
-            targetBranch: matchedWt?.branch,
-            isBroken: !exists,
-            isHighlightedScope: true,
-            ecosystem: 'rust',
-            mechanism: 'cargo-path',
-            manifestFile: fileInfo.rel,
-          })
+            links.push({
+              sourceWorktreeId: worktree.id,
+              sourceWorktreePath: wtPath,
+              packageName: dep.crateName,
+              linkPath: fullFilePath,
+              targetRealPath,
+              rawTarget: dep.targetPath,
+              targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
+              targetWorktreeId: matchedWt?.id,
+              targetRepoAlias: matchedWt?.repoAlias,
+              targetBranch: matchedWt?.branch,
+              isBroken: !exists,
+              isHighlightedScope: true,
+              ecosystem: 'rust',
+              mechanism: 'cargo-path',
+              manifestFile: relManifest,
+            })
+          }
+        } catch {
+          // Ignore read error
         }
-      } catch {
-        // Ignore read error
       }
     }
 

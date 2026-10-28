@@ -26,7 +26,9 @@ function resolveFixCommandForLink(
   const effectiveLink =
     includeManifestPath && link.ecosystem === 'dotnet' && link.linkPath
       ? { ...link, manifestFile: link.linkPath }
-      : link
+      : includeManifestPath && link.ecosystem === 'go' && link.linkPath
+        ? { ...link, manifestFile: undefined }
+        : link
   const adapter = getAdapterById(effectiveLink.ecosystem)
   const cmd = adapter.buildFixCommand(effectiveLink, newTargetWorktree)
   if (

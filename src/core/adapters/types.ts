@@ -24,6 +24,77 @@ export interface EcosystemAdapter {
   buildFixCommand(link: JunctionLink, newTargetWorktree: WorktreeNode): string
 }
 
+export const IGNORED_SCAN_DIRS = new Set([
+  '.git',
+  'node_modules',
+  '.venv',
+  'venv',
+  'env',
+  'target',
+  'dist',
+  'build',
+  'bin',
+  'obj',
+  'out',
+  'coverage',
+  '__pycache__',
+  '.next',
+  '.turbo',
+  '.cache',
+])
+
+/**
+ * Returns the worktree root plus non-hidden subdirectories up to maxDepth (default 2).
+ * Used by language adapters to support full-stack repos (frontend/, backend/)
+ * and monorepo layouts (apps/*, packages/*, services/*, crates/*).
+ */
+export async function discoverCandidateRoots(
+  worktreePath: string,
+  maxDepth: number = 2,
+): Promise<string[]> {
+  const roots: string[] = [worktreePath]
+
+  async function walk(currentDir: string, depth: number): Promise<void> {
+    if (depth > maxDepth) return
+    let entries: import('node:fs').Dirent[] = []
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      if (entry.name.startsWith('.') || IGNORED_SCAN_DIRS.has(entry.name)) continue
+      const fullPath = path.join(currentDir, entry.name)
+      roots.push(fullPath)
+      if (depth < maxDepth) {
+        await walk(fullPath, depth + 1)
+      }
+    }
+  }
+
+  await walk(worktreePath, 1)
+  return roots
+}
+
+/**
+ * Returns true if targetRealPath resolves inside the SAME sourceWorktree (and is not broken).
+ * Intra-monorepo links inside the same worktree checkout are naturally isolated and must not
+ * be flagged as cross-worktree links.
+ */
+export function isIntraWorktreeLink(
+  targetRealPath: string,
+  sourceWorktree: WorktreeNode,
+  matchedWorktree: WorktreeNode | undefined,
+  isBroken: boolean,
+): boolean {
+  if (isBroken || !targetRealPath) return false
+  if (matchedWorktree && matchedWorktree.id === sourceWorktree.id) return true
+  const normSource = path.resolve(sourceWorktree.worktreePath).toLowerCase()
+  const normTarget = path.resolve(targetRealPath).toLowerCase()
+  return normTarget === normSource || normTarget.startsWith(normSource + path.sep)
+}
+
 export async function pathExists(p: string): Promise<boolean> {
   try {
     await fs.access(p)
@@ -111,41 +182,56 @@ export async function inspectFolderSharedEnv(
   defaultEnvName: string,
   allWorktrees: WorktreeNode[] = [],
 ): Promise<SharedEnvInfo> {
-  for (const candidate of folderCandidates) {
-    const fullPath = path.join(worktreePath, candidate)
-    try {
-      const st = await fs.lstat(fullPath)
-      if (st.isSymbolicLink()) {
-        let targetRealPath = ''
-        try {
-          targetRealPath = await fs.realpath(fullPath)
-        } catch {
+  const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
+  let firstOwn: SharedEnvInfo | null = null
+
+  for (const rootDir of candidateRoots) {
+    for (const candidate of folderCandidates) {
+      const fullPath = path.join(rootDir, candidate)
+      const envName =
+        rootDir === worktreePath
+          ? candidate
+          : path.relative(worktreePath, fullPath).replace(/\\/g, '/')
+
+      try {
+        const st = await fs.lstat(fullPath)
+        if (st.isSymbolicLink()) {
+          let targetRealPath = ''
           try {
-            targetRealPath = await fs.readlink(fullPath)
+            targetRealPath = await fs.realpath(fullPath)
           } catch {
-            targetRealPath = '(destino inaccesible)'
+            try {
+              targetRealPath = await fs.readlink(fullPath)
+            } catch {
+              targetRealPath = '(destino inaccesible)'
+            }
+          }
+          const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+          return {
+            ecosystem,
+            envName,
+            type: 'shared',
+            targetRealPath,
+            targetWorktreeId: matchedWt?.id,
           }
         }
-        const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
-        return {
-          ecosystem,
-          envName: candidate,
-          type: 'shared',
-          targetRealPath,
-          targetWorktreeId: matchedWt?.id,
+        if (st.isDirectory() && !firstOwn) {
+          firstOwn = {
+            ecosystem,
+            envName,
+            type: 'own',
+          }
         }
+      } catch {
+        // Try next candidate
       }
-      if (st.isDirectory()) {
-        return {
-          ecosystem,
-          envName: candidate,
-          type: 'own',
-        }
-      }
-    } catch {
-      // Try next candidate
     }
   }
+
+  if (firstOwn) {
+    return firstOwn
+  }
+
   return {
     ecosystem,
     envName: defaultEnvName,

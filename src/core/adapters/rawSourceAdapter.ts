@@ -4,7 +4,9 @@ import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../t
 import { commentSafe, quoteArg } from '../shellSafe.js'
 import {
   computeTargetSubpath,
+  discoverCandidateRoots,
   EcosystemAdapter,
+  isIntraWorktreeLink,
   pathExists,
   resolveNewTargetPath,
   resolvePathToWorktree,
@@ -154,54 +156,54 @@ export async function scanTsConfigPaths(
 ): Promise<JunctionLink[]> {
   const links: JunctionLink[] = []
   const wtPath = worktree.worktreePath
-  const normSelf = path.resolve(wtPath).toLowerCase()
+  const candidateRoots = await discoverCandidateRoots(wtPath, 2)
 
-  for (const fileName of ['tsconfig.json', 'tsconfig.base.json', 'jsconfig.json']) {
-    const fullPath = path.join(wtPath, fileName)
-    if (!(await pathExists(fullPath))) continue
+  for (const candidateRoot of candidateRoots) {
+    for (const fileName of ['tsconfig.json', 'tsconfig.base.json', 'jsconfig.json']) {
+      const fullPath = path.join(candidateRoot, fileName)
+      if (!(await pathExists(fullPath))) continue
 
-    try {
-      const content = await fs.readFile(fullPath, 'utf-8')
-      const parsedPaths = parseTsConfigPaths(content)
-      for (const item of parsedPaths) {
-        const resolvedTarget = path.resolve(wtPath, item.targetPath)
-        const normTarget = resolvedTarget.toLowerCase()
-
-        if (normTarget === normSelf || normTarget.startsWith(normSelf + path.sep)) {
-          continue
-        }
-
-        const exists = await pathExists(resolvedTarget)
-        let targetRealPath = resolvedTarget
-        if (exists) {
-          try {
-            targetRealPath = await fs.realpath(resolvedTarget)
-          } catch {
-            targetRealPath = resolvedTarget
+      try {
+        const content = await fs.readFile(fullPath, 'utf-8')
+        const parsedPaths = parseTsConfigPaths(content)
+        const relManifest = path.relative(wtPath, fullPath).replace(/\\/g, '/')
+        for (const item of parsedPaths) {
+          const resolvedTarget = path.resolve(candidateRoot, item.targetPath)
+          const exists = await pathExists(resolvedTarget)
+          let targetRealPath = resolvedTarget
+          if (exists) {
+            try {
+              targetRealPath = await fs.realpath(resolvedTarget)
+            } catch {
+              targetRealPath = resolvedTarget
+            }
           }
-        }
-        const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+          const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+          if (isIntraWorktreeLink(targetRealPath, worktree, matchedWt, !exists)) {
+            continue
+          }
 
-        links.push({
-          sourceWorktreeId: worktree.id,
-          sourceWorktreePath: wtPath,
-          packageName: item.alias,
-          linkPath: fullPath,
-          targetRealPath,
-          rawTarget: item.targetPath,
-          targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
-          targetWorktreeId: matchedWt?.id,
-          targetRepoAlias: matchedWt?.repoAlias,
-          targetBranch: matchedWt?.branch,
-          isBroken: !exists,
-          isHighlightedScope: true,
-          ecosystem: 'node',
-          mechanism: 'tsconfig-path',
-          manifestFile: fileName,
-        })
+          links.push({
+            sourceWorktreeId: worktree.id,
+            sourceWorktreePath: wtPath,
+            packageName: item.alias,
+            linkPath: fullPath,
+            targetRealPath,
+            rawTarget: item.targetPath,
+            targetSubpath: computeTargetSubpath(targetRealPath, matchedWt),
+            targetWorktreeId: matchedWt?.id,
+            targetRepoAlias: matchedWt?.repoAlias,
+            targetBranch: matchedWt?.branch,
+            isBroken: !exists,
+            isHighlightedScope: true,
+            ecosystem: 'node',
+            mechanism: 'tsconfig-path',
+            manifestFile: relManifest,
+          })
+        }
+      } catch {
+        // Ignore read error
       }
-    } catch {
-      // Ignore read error
     }
   }
 

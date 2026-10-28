@@ -5,8 +5,10 @@ import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../t
 import { buildFileReplaceCommand, commentSafe, quoteArg } from '../shellSafe.js'
 import {
   computeTargetSubpath,
+  discoverCandidateRoots,
   EcosystemAdapter,
   inspectFolderSharedEnv,
+  isIntraWorktreeLink,
   pathExists,
   resolveNewTargetPath,
   resolvePathToWorktree,
@@ -112,33 +114,39 @@ export function parseEnvPythonPath(envContent: string): string[] {
   return paths
 }
 
-async function findSitePackagesDirs(worktreePath: string): Promise<string[]> {
-  const dirs: string[] = []
-  for (const venvName of ['.venv', 'venv']) {
-    const venvRoot = path.join(worktreePath, venvName)
-    if (!(await pathExists(venvRoot))) continue
+async function findSitePackagesDirs(
+  worktreePath: string,
+): Promise<{ spDir: string; candidateRoot: string }[]> {
+  const dirs: { spDir: string; candidateRoot: string }[] = []
+  const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
 
-    // Windows layout: .venv/Lib/site-packages
-    const winSp = path.join(venvRoot, 'Lib', 'site-packages')
-    if (await pathExists(winSp)) {
-      dirs.push(winSp)
-    }
+  for (const candidateRoot of candidateRoots) {
+    for (const venvName of ['.venv', 'venv']) {
+      const venvRoot = path.join(candidateRoot, venvName)
+      if (!(await pathExists(venvRoot))) continue
 
-    // POSIX layout: .venv/lib/pythonX.Y/site-packages
-    const posixLib = path.join(venvRoot, 'lib')
-    if (await pathExists(posixLib)) {
-      try {
-        const entries = await fs.readdir(posixLib, { withFileTypes: true })
-        for (const entry of entries) {
-          if (entry.isDirectory() && entry.name.startsWith('python')) {
-            const sp = path.join(posixLib, entry.name, 'site-packages')
-            if (await pathExists(sp)) {
-              dirs.push(sp)
+      // Windows layout: .venv/Lib/site-packages
+      const winSp = path.join(venvRoot, 'Lib', 'site-packages')
+      if (await pathExists(winSp)) {
+        dirs.push({ spDir: winSp, candidateRoot })
+      }
+
+      // POSIX layout: .venv/lib/pythonX.Y/site-packages
+      const posixLib = path.join(venvRoot, 'lib')
+      if (await pathExists(posixLib)) {
+        try {
+          const entries = await fs.readdir(posixLib, { withFileTypes: true })
+          for (const entry of entries) {
+            if (entry.isDirectory() && entry.name.startsWith('python')) {
+              const sp = path.join(posixLib, entry.name, 'site-packages')
+              if (await pathExists(sp)) {
+                dirs.push({ spDir: sp, candidateRoot })
+              }
             }
           }
+        } catch {
+          // Ignore read errors
         }
-      } catch {
-        // Ignore read errors
       }
     }
   }
@@ -153,15 +161,9 @@ async function createResolvedPythonLink(
   mechanism: 'pip-editable' | 'pythonpath-override',
   manifestFile: string,
   allWorktrees: WorktreeNode[],
+  baseDir: string = worktree.worktreePath,
 ): Promise<JunctionLink | null> {
-  const resolvedTarget = path.resolve(worktree.worktreePath, rawTargetPath)
-  const normSelf = path.resolve(worktree.worktreePath).toLowerCase()
-  const normTarget = resolvedTarget.toLowerCase()
-
-  // Ignore paths pointing inside the same worktree
-  if (normTarget === normSelf || normTarget.startsWith(normSelf + path.sep)) {
-    return null
-  }
+  const resolvedTarget = path.resolve(baseDir, rawTargetPath)
 
   const exists = await pathExists(resolvedTarget)
   let targetRealPath = resolvedTarget
@@ -176,6 +178,10 @@ async function createResolvedPythonLink(
   const matchedWorktree = exists
     ? resolvePathToWorktree(targetRealPath, allWorktrees)
     : resolvePathToWorktree(resolvedTarget, allWorktrees)
+
+  if (isIntraWorktreeLink(targetRealPath, worktree, matchedWorktree, !exists)) {
+    return null
+  }
 
   return {
     sourceWorktreeId: worktree.id,
@@ -230,95 +236,88 @@ export async function scanPythonRawImports(
 ): Promise<JunctionLink[]> {
   const links: JunctionLink[] = []
   const wtPath = worktree.worktreePath
+  const candidateRoots = await discoverCandidateRoots(wtPath, 2)
 
-  // 1. Check .env / .envrc for PYTHONPATH=...
-  for (const envName of ['.env', '.envrc']) {
-    const envPath = path.join(wtPath, envName)
-    if (await pathExists(envPath)) {
-      try {
-        const content = await fs.readFile(envPath, 'utf-8')
-        const pyPaths = parseEnvPythonPath(content)
-        for (const rawTarget of pyPaths) {
-          const pkgName = path.basename(path.resolve(wtPath, rawTarget)) || rawTarget
-          const link = await createResolvedPythonLink(
-            worktree,
-            pkgName,
-            envPath,
-            rawTarget,
-            'pythonpath-override',
-            envName,
-            allWorktrees,
-          )
-          if (link) links.push(link)
-        }
-      } catch {
-        // Ignore read error
-      }
-    }
-  }
-
-  // 2. Check .vscode/settings.json for python.analysis.extraPaths
-  const vscodeSettingsPath = path.join(wtPath, '.vscode', 'settings.json')
-  if (await pathExists(vscodeSettingsPath)) {
-    try {
-      const content = await fs.readFile(vscodeSettingsPath, 'utf-8')
-      const cleaned = content.replace(/^\s*\/\/.*$/gm, '')
-      const parsed = JSON.parse(cleaned)
-      const extraPaths =
-        parsed['python.analysis.extraPaths'] || parsed['python.autoComplete.extraPaths']
-      if (Array.isArray(extraPaths)) {
-        for (const rawTarget of extraPaths) {
-          if (typeof rawTarget === 'string') {
-            const pkgName = path.basename(path.resolve(wtPath, rawTarget)) || rawTarget
+  for (const candidateRoot of candidateRoots) {
+    // 1. Check .env / .envrc for PYTHONPATH=...
+    for (const envName of ['.env', '.envrc']) {
+      const envPath = path.join(candidateRoot, envName)
+      if (await pathExists(envPath)) {
+        try {
+          const content = await fs.readFile(envPath, 'utf-8')
+          const pyPaths = parseEnvPythonPath(content)
+          const relManifest = path.relative(wtPath, envPath).replace(/\\/g, '/')
+          for (const rawTarget of pyPaths) {
+            const pkgName = path.basename(path.resolve(candidateRoot, rawTarget)) || rawTarget
             const link = await createResolvedPythonLink(
               worktree,
               pkgName,
-              vscodeSettingsPath,
+              envPath,
               rawTarget,
               'pythonpath-override',
-              '.vscode/settings.json',
+              relManifest,
               allWorktrees,
+              candidateRoot,
             )
             if (link) links.push(link)
           }
+        } catch {
+          // Ignore read error
         }
       }
-    } catch {
-      // Ignore invalid JSON
+    }
+
+    // 2. Check .vscode/settings.json for python.analysis.extraPaths
+    const vscodeSettingsPath = path.join(candidateRoot, '.vscode', 'settings.json')
+    if (await pathExists(vscodeSettingsPath)) {
+      try {
+        const content = await fs.readFile(vscodeSettingsPath, 'utf-8')
+        const cleaned = content.replace(/^\s*\/\/.*$/gm, '')
+        const parsed = JSON.parse(cleaned)
+        const extraPaths =
+          parsed['python.analysis.extraPaths'] || parsed['python.autoComplete.extraPaths']
+        if (Array.isArray(extraPaths)) {
+          const relManifest = path.relative(wtPath, vscodeSettingsPath).replace(/\\/g, '/')
+          for (const rawTarget of extraPaths) {
+            if (typeof rawTarget === 'string') {
+              const pkgName = path.basename(path.resolve(candidateRoot, rawTarget)) || rawTarget
+              const link = await createResolvedPythonLink(
+                worktree,
+                pkgName,
+                vscodeSettingsPath,
+                rawTarget,
+                'pythonpath-override',
+                relManifest,
+                allWorktrees,
+                candidateRoot,
+              )
+              if (link) links.push(link)
+            }
+          }
+        }
+      } catch {
+        // Ignore invalid JSON
+      }
     }
   }
 
-  // 3. Scan top 2 levels of .py files for sys.path.append / sys.path.insert
+  // 3. Scan .py files in candidate roots for sys.path.append / sys.path.insert
   const pyFiles: { fullPath: string; relName: string }[] = []
-  try {
-    const entries = await fs.readdir(wtPath, { withFileTypes: true })
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith('.py')) {
-        pyFiles.push({ fullPath: path.join(wtPath, entry.name), relName: entry.name })
-      } else if (
-        entry.isDirectory() &&
-        !entry.name.startsWith('.') &&
-        !['node_modules', 'venv', 'target', 'dist', 'build', '__pycache__'].includes(entry.name)
-      ) {
-        try {
-          const subEntries = await fs.readdir(path.join(wtPath, entry.name), {
-            withFileTypes: true,
+  for (const candidateRoot of candidateRoots) {
+    try {
+      const entries = await fs.readdir(candidateRoot, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith('.py')) {
+          const fullPath = path.join(candidateRoot, entry.name)
+          pyFiles.push({
+            fullPath,
+            relName: path.relative(wtPath, fullPath).replace(/\\/g, '/'),
           })
-          for (const sub of subEntries) {
-            if (sub.isFile() && sub.name.endsWith('.py')) {
-              pyFiles.push({
-                fullPath: path.join(wtPath, entry.name, sub.name),
-                relName: `${entry.name}/${sub.name}`,
-              })
-            }
-          }
-        } catch {
-          // Ignore
         }
       }
+    } catch {
+      // Ignore
     }
-  } catch {
-    // Ignore
   }
 
   for (const pyFile of pyFiles) {
@@ -338,6 +337,7 @@ export async function scanPythonRawImports(
           'pythonpath-override',
           pyFile.relName,
           allWorktrees,
+          wtPath,
         )
         if (link) links.push(link)
       }
@@ -354,14 +354,17 @@ export const pythonAdapter: EcosystemAdapter = {
   label: 'Py',
 
   async detect(worktreePath: string): Promise<boolean> {
-    if (
-      (await pathExists(path.join(worktreePath, 'pyproject.toml'))) ||
-      (await pathExists(path.join(worktreePath, 'requirements.txt'))) ||
-      (await pathExists(path.join(worktreePath, 'setup.py'))) ||
-      (await pathExists(path.join(worktreePath, '.venv'))) ||
-      (await pathExists(path.join(worktreePath, 'venv')))
-    ) {
-      return true
+    const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
+    for (const rootDir of candidateRoots) {
+      if (
+        (await pathExists(path.join(rootDir, 'pyproject.toml'))) ||
+        (await pathExists(path.join(rootDir, 'requirements.txt'))) ||
+        (await pathExists(path.join(rootDir, 'setup.py'))) ||
+        (await pathExists(path.join(rootDir, '.venv'))) ||
+        (await pathExists(path.join(rootDir, 'venv')))
+      ) {
+        return true
+      }
     }
     return hasPythonFilesTopLevels(worktreePath)
   },
@@ -393,7 +396,7 @@ export const pythonAdapter: EcosystemAdapter = {
     }
 
     const spDirs = await findSitePackagesDirs(worktree.worktreePath)
-    for (const spDir of spDirs) {
+    for (const { spDir, candidateRoot } of spDirs) {
       let entries: import('node:fs').Dirent[] = []
       try {
         entries = await fs.readdir(spDir, { withFileTypes: true })
@@ -423,6 +426,7 @@ export const pythonAdapter: EcosystemAdapter = {
               'pip-editable',
               relManifest,
               allWorktrees,
+              candidateRoot,
             )
             addLink(link)
             continue
@@ -446,6 +450,7 @@ export const pythonAdapter: EcosystemAdapter = {
                 'pip-editable',
                 relManifest,
                 allWorktrees,
+                candidateRoot,
               )
               addLink(link)
             }
@@ -468,6 +473,7 @@ export const pythonAdapter: EcosystemAdapter = {
                 'pip-editable',
                 relManifest,
                 allWorktrees,
+                candidateRoot,
               )
               addLink(link)
             }
@@ -495,6 +501,7 @@ export const pythonAdapter: EcosystemAdapter = {
                   'pip-editable',
                   relDirect,
                   allWorktrees,
+                  candidateRoot,
                 )
                 addLink(link)
               }

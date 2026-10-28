@@ -4,8 +4,10 @@ import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../t
 import { quoteArg } from '../shellSafe.js'
 import {
   computeTargetSubpath,
+  discoverCandidateRoots,
   EcosystemAdapter,
   inspectFolderSharedEnv,
+  isIntraWorktreeLink,
   pathExists,
   resolveNewTargetPath,
   resolvePathToWorktree,
@@ -47,6 +49,10 @@ async function inspectPackageEntry(
     const matchedWorktree =
       !isBroken && targetRealPath ? resolvePathToWorktree(targetRealPath, allWorktrees) : undefined
 
+    if (isIntraWorktreeLink(targetRealPath, sourceWorktree, matchedWorktree, isBroken)) {
+      return null
+    }
+
     return {
       sourceWorktreeId: sourceWorktree.id,
       sourceWorktreePath: sourceWorktree.worktreePath,
@@ -73,10 +79,16 @@ export const nodeAdapter: EcosystemAdapter = {
   label: 'Node',
 
   async detect(worktreePath: string): Promise<boolean> {
-    return (
-      (await pathExists(path.join(worktreePath, 'package.json'))) ||
-      (await pathExists(path.join(worktreePath, 'node_modules')))
-    )
+    const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
+    for (const rootDir of candidateRoots) {
+      if (
+        (await pathExists(path.join(rootDir, 'package.json'))) ||
+        (await pathExists(path.join(rootDir, 'node_modules')))
+      ) {
+        return true
+      }
+    }
+    return false
   },
 
   async inspectSharedEnv(
@@ -102,39 +114,41 @@ export const nodeAdapter: EcosystemAdapter = {
     if (nodeEnabled === false) return []
 
     const highlightScopes = config.adapters?.node?.highlightScopes ?? []
-    const nmPath = path.join(worktree.worktreePath, 'node_modules')
+    const candidateRoots = await discoverCandidateRoots(worktree.worktreePath, 2)
     const links: JunctionLink[] = []
-
-    let topEntries: import('node:fs').Dirent[] = []
-    try {
-      topEntries = await fs.readdir(nmPath, { withFileTypes: true })
-    } catch {
-      return []
-    }
-
     const tasks: Promise<JunctionLink | null>[] = []
 
-    for (const entry of topEntries) {
-      if (entry.name.startsWith('.')) continue
-      const entryFullPath = path.join(nmPath, entry.name)
+    for (const rootDir of candidateRoots) {
+      const nmPath = path.join(rootDir, 'node_modules')
+      let topEntries: import('node:fs').Dirent[] = []
+      try {
+        topEntries = await fs.readdir(nmPath, { withFileTypes: true })
+      } catch {
+        continue
+      }
 
-      if (entry.name.startsWith('@')) {
-        try {
-          const scopedEntries = await fs.readdir(entryFullPath, { withFileTypes: true })
-          for (const subEntry of scopedEntries) {
-            const pkgName = `${entry.name}/${subEntry.name}`
-            const subFullPath = path.join(entryFullPath, subEntry.name)
-            tasks.push(
-              inspectPackageEntry(worktree, pkgName, subFullPath, allWorktrees, highlightScopes),
-            )
+      for (const entry of topEntries) {
+        if (entry.name.startsWith('.')) continue
+        const entryFullPath = path.join(nmPath, entry.name)
+
+        if (entry.name.startsWith('@')) {
+          try {
+            const scopedEntries = await fs.readdir(entryFullPath, { withFileTypes: true })
+            for (const subEntry of scopedEntries) {
+              const pkgName = `${entry.name}/${subEntry.name}`
+              const subFullPath = path.join(entryFullPath, subEntry.name)
+              tasks.push(
+                inspectPackageEntry(worktree, pkgName, subFullPath, allWorktrees, highlightScopes),
+              )
+            }
+          } catch {
+            // Ignore inaccessible scope dirs
           }
-        } catch {
-          // Ignore inaccessible scope dirs
+        } else {
+          tasks.push(
+            inspectPackageEntry(worktree, entry.name, entryFullPath, allWorktrees, highlightScopes),
+          )
         }
-      } else {
-        tasks.push(
-          inspectPackageEntry(worktree, entry.name, entryFullPath, allWorktrees, highlightScopes),
-        )
       }
     }
 

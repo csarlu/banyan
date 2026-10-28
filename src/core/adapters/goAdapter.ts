@@ -2,7 +2,13 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { JunctionLink, SharedEnvInfo, WorkspaceConfig, WorktreeNode } from '../types.js'
 import { commentSafe, quoteArg, safeToken } from '../shellSafe.js'
-import { EcosystemAdapter, pathExists, resolvePathToWorktree } from './types.js'
+import {
+  discoverCandidateRoots,
+  EcosystemAdapter,
+  isIntraWorktreeLink,
+  pathExists,
+  resolvePathToWorktree,
+} from './types.js'
 
 export interface ParsedGoReplace {
   moduleName: string
@@ -96,10 +102,16 @@ export const goAdapter: EcosystemAdapter = {
   label: 'Go',
 
   async detect(worktreePath: string): Promise<boolean> {
-    return (
-      (await pathExists(path.join(worktreePath, 'go.mod'))) ||
-      (await pathExists(path.join(worktreePath, 'go.work')))
-    )
+    const candidateRoots = await discoverCandidateRoots(worktreePath, 2)
+    for (const rootDir of candidateRoots) {
+      if (
+        (await pathExists(path.join(rootDir, 'go.mod'))) ||
+        (await pathExists(path.join(rootDir, 'go.work')))
+      ) {
+        return true
+      }
+    }
+    return false
   },
 
   async inspectSharedEnv(): Promise<SharedEnvInfo | null> {
@@ -115,94 +127,94 @@ export const goAdapter: EcosystemAdapter = {
 
     const links: JunctionLink[] = []
     const wtPath = worktree.worktreePath
-    const normSelf = path.resolve(wtPath).toLowerCase()
+    const candidateRoots = await discoverCandidateRoots(wtPath, 2)
 
-    const goModPath = path.join(wtPath, 'go.mod')
-    if (await pathExists(goModPath)) {
-      try {
-        const content = await fs.readFile(goModPath, 'utf-8')
-        const replaces = parseGoModReplaces(content)
-        for (const rep of replaces) {
-          const resolvedTarget = path.resolve(wtPath, rep.targetPath)
-          const normTarget = resolvedTarget.toLowerCase()
-          if (normTarget === normSelf || normTarget.startsWith(normSelf + path.sep)) {
-            continue
-          }
-
-          const exists = await pathExists(resolvedTarget)
-          let targetRealPath = resolvedTarget
-          if (exists) {
-            try {
-              targetRealPath = await fs.realpath(resolvedTarget)
-            } catch {
-              targetRealPath = resolvedTarget
+    for (const candidateRoot of candidateRoots) {
+      const goModPath = path.join(candidateRoot, 'go.mod')
+      if (await pathExists(goModPath)) {
+        try {
+          const content = await fs.readFile(goModPath, 'utf-8')
+          const replaces = parseGoModReplaces(content)
+          const relManifest = path.relative(wtPath, goModPath).replace(/\\/g, '/') || 'go.mod'
+          for (const rep of replaces) {
+            const resolvedTarget = path.resolve(candidateRoot, rep.targetPath)
+            const exists = await pathExists(resolvedTarget)
+            let targetRealPath = resolvedTarget
+            if (exists) {
+              try {
+                targetRealPath = await fs.realpath(resolvedTarget)
+              } catch {
+                targetRealPath = resolvedTarget
+              }
             }
-          }
-          const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+            const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+            if (isIntraWorktreeLink(targetRealPath, worktree, matchedWt, !exists)) {
+              continue
+            }
 
-          links.push({
-            sourceWorktreeId: worktree.id,
-            sourceWorktreePath: wtPath,
-            packageName: rep.moduleName,
-            linkPath: goModPath,
-            targetRealPath,
-            targetWorktreeId: matchedWt?.id,
-            targetRepoAlias: matchedWt?.repoAlias,
-            targetBranch: matchedWt?.branch,
-            isBroken: !exists,
-            isHighlightedScope: true,
-            ecosystem: 'go',
-            mechanism: 'go-mod-replace',
-            manifestFile: 'go.mod',
-          })
+            links.push({
+              sourceWorktreeId: worktree.id,
+              sourceWorktreePath: wtPath,
+              packageName: rep.moduleName,
+              linkPath: goModPath,
+              targetRealPath,
+              targetWorktreeId: matchedWt?.id,
+              targetRepoAlias: matchedWt?.repoAlias,
+              targetBranch: matchedWt?.branch,
+              isBroken: !exists,
+              isHighlightedScope: true,
+              ecosystem: 'go',
+              mechanism: 'go-mod-replace',
+              manifestFile: relManifest,
+            })
+          }
+        } catch {
+          // Ignore read error
         }
-      } catch {
-        // Ignore read error
       }
-    }
 
-    const goWorkPath = path.join(wtPath, 'go.work')
-    if (await pathExists(goWorkPath)) {
-      try {
-        const content = await fs.readFile(goWorkPath, 'utf-8')
-        const uses = parseGoWorkUses(content)
-        for (const useDir of uses) {
-          const resolvedTarget = path.resolve(wtPath, useDir)
-          const normTarget = resolvedTarget.toLowerCase()
-          if (normTarget === normSelf || normTarget.startsWith(normSelf + path.sep)) {
-            continue
-          }
-
-          const exists = await pathExists(resolvedTarget)
-          let targetRealPath = resolvedTarget
-          if (exists) {
-            try {
-              targetRealPath = await fs.realpath(resolvedTarget)
-            } catch {
-              targetRealPath = resolvedTarget
+      const goWorkPath = path.join(candidateRoot, 'go.work')
+      if (await pathExists(goWorkPath)) {
+        try {
+          const content = await fs.readFile(goWorkPath, 'utf-8')
+          const uses = parseGoWorkUses(content)
+          const relManifest = path.relative(wtPath, goWorkPath).replace(/\\/g, '/') || 'go.work'
+          for (const useDir of uses) {
+            const resolvedTarget = path.resolve(candidateRoot, useDir)
+            const exists = await pathExists(resolvedTarget)
+            let targetRealPath = resolvedTarget
+            if (exists) {
+              try {
+                targetRealPath = await fs.realpath(resolvedTarget)
+              } catch {
+                targetRealPath = resolvedTarget
+              }
             }
-          }
-          const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
-          const pkgName = path.basename(resolvedTarget) || useDir
+            const matchedWt = resolvePathToWorktree(targetRealPath, allWorktrees)
+            if (isIntraWorktreeLink(targetRealPath, worktree, matchedWt, !exists)) {
+              continue
+            }
+            const pkgName = path.basename(resolvedTarget) || useDir
 
-          links.push({
-            sourceWorktreeId: worktree.id,
-            sourceWorktreePath: wtPath,
-            packageName: pkgName,
-            linkPath: goWorkPath,
-            targetRealPath,
-            targetWorktreeId: matchedWt?.id,
-            targetRepoAlias: matchedWt?.repoAlias,
-            targetBranch: matchedWt?.branch,
-            isBroken: !exists,
-            isHighlightedScope: true,
-            ecosystem: 'go',
-            mechanism: 'go-mod-replace',
-            manifestFile: 'go.work',
-          })
+            links.push({
+              sourceWorktreeId: worktree.id,
+              sourceWorktreePath: wtPath,
+              packageName: pkgName,
+              linkPath: goWorkPath,
+              targetRealPath,
+              targetWorktreeId: matchedWt?.id,
+              targetRepoAlias: matchedWt?.repoAlias,
+              targetBranch: matchedWt?.branch,
+              isBroken: !exists,
+              isHighlightedScope: true,
+              ecosystem: 'go',
+              mechanism: 'go-mod-replace',
+              manifestFile: relManifest,
+            })
+          }
+        } catch {
+          // Ignore read error
         }
-      } catch {
-        // Ignore read error
       }
     }
 
@@ -216,6 +228,9 @@ export const goAdapter: EcosystemAdapter = {
     }
     const target =
       safeToken(newTargetWorktree.worktreePath) ?? quoteArg(newTargetWorktree.worktreePath)
+    if (link.manifestFile && link.manifestFile.includes('/')) {
+      return `go mod edit -replace=${pkg}=${target} ${quoteArg(link.manifestFile)}`
+    }
     return `go mod edit -replace=${pkg}=${target}`
   },
 }

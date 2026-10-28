@@ -638,3 +638,138 @@ describe('Ecosystem Icons & Visual Reference Badges', () => {
     }
   })
 })
+
+describe('Polyglot Monorepo & Subdirectory Layout (BAN-23)', () => {
+  let monorepoSandbox = ''
+
+  beforeAll(async () => {
+    monorepoSandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'banyan-monorepo-ban23-'))
+  })
+
+  afterAll(async () => {
+    if (monorepoSandbox) {
+      await fs.rm(monorepoSandbox, { recursive: true, force: true })
+    }
+  })
+
+  it('detects ecosystems in level 1-2 subdirectories, filters intra-worktree links, and flags shared subdirectory envs', async () => {
+    const { createDirLink } = await import('../src/core/playground.js')
+    const { scanAllAdapterLinks } = await import('../src/core/adapters/index.js')
+
+    async function initRepo(
+      dirName: string,
+      files: Record<string, string>,
+      branch = 'main',
+    ): Promise<string> {
+      const repoDir = path.join(monorepoSandbox, dirName)
+      await fs.mkdir(repoDir, { recursive: true })
+      await runGitCmd(repoDir, ['init', '-b', branch])
+      await runGitCmd(repoDir, ['config', 'user.email', 'test@banyan.dev'])
+      await runGitCmd(repoDir, ['config', 'user.name', 'Banyan Test'])
+
+      for (const [relFile, content] of Object.entries(files)) {
+        const full = path.join(repoDir, relFile)
+        await fs.mkdir(path.dirname(full), { recursive: true })
+        await fs.writeFile(full, content, 'utf-8')
+      }
+
+      await runGitCmd(repoDir, ['add', '.'])
+      await runGitCmd(repoDir, ['commit', '-m', 'initial commit'])
+      return repoDir
+    }
+
+    // External repos
+    const sharedLibDir = await initRepo('shared-lib-main', {
+      'package.json': JSON.stringify({ name: '@acme/shared', version: '1.0.0' }),
+    })
+    const protoDir = await initRepo('proto-wt', {
+      'go.mod': 'module example.com/proto\ngo 1.22\n',
+    })
+
+    // Monorepo without root manifests, organized into level 1 and level 2 subdirectories
+    const monorepoMain = await initRepo('monorepo-main', {
+      'README.md': '# Polyglot Monorepo\n',
+      'frontend/package.json': JSON.stringify({ name: 'web-frontend', version: '1.0.0' }),
+      'packages/internal-ui/package.json': JSON.stringify({
+        name: '@acme/internal-ui',
+        version: '1.0.0',
+      }),
+      'services/billing-go/go.mod': [
+        'module example.com/billing',
+        'go 1.22',
+        'replace example.com/proto => ../../../proto-wt',
+      ].join('\n'),
+      'workers/ml-py/pyproject.toml': '[project]\nname = "ml-worker"\nversion = "0.1.0"\n',
+      'crates/engine-rs/Cargo.toml': [
+        '[package]',
+        'name = "engine-rs"',
+        'version = "0.1.0"',
+        '[dependencies]',
+        'proto-rs = { path = "../../../proto-wt" }',
+      ].join('\n'),
+    })
+
+    // Create node_modules inside monorepo-main/frontend with:
+    // 1) Cross-worktree link -> shared-lib-main
+    // 2) Intra-worktree link -> monorepo-main/packages/internal-ui (should be ignored!)
+    const frontendScopeDir = path.join(monorepoMain, 'frontend', 'node_modules', '@acme')
+    await fs.mkdir(frontendScopeDir, { recursive: true })
+    await createDirLink(sharedLibDir, path.join(frontendScopeDir, 'shared'))
+    await createDirLink(
+      path.join(monorepoMain, 'packages', 'internal-ui'),
+      path.join(frontendScopeDir, 'internal-ui'),
+    )
+
+    // Create a sibling worktree monorepo-feat that shares frontend/node_modules with monorepo-main
+    const monorepoFeat = path.join(monorepoSandbox, 'monorepo-feat')
+    await runGitCmd(monorepoMain, ['worktree', 'add', '-b', 'feat-ui', monorepoFeat])
+    await createDirLink(
+      path.join(monorepoMain, 'frontend', 'node_modules'),
+      path.join(monorepoFeat, 'frontend', 'node_modules'),
+    )
+
+    // Make monorepo-main dirty so SHARED_ENV_DIRTY triggers
+    await fs.writeFile(path.join(monorepoMain, 'README.md'), '# Dirty Monorepo\n', 'utf-8')
+
+    const wsConfig: WorkspaceConfig = {
+      root: monorepoSandbox,
+      discoverSubdirs: true,
+      repos: [
+        { alias: 'shared-lib', path: sharedLibDir },
+        { alias: 'proto', path: protoDir },
+        { alias: 'monorepo', path: monorepoMain },
+      ],
+    }
+
+    const snapshot = await buildEcosystemSnapshot('monorepo-test', wsConfig)
+    const mainWt = snapshot.worktrees.find((w) => w.worktreePath === monorepoMain)
+    expect(mainWt).toBeDefined()
+
+    // 1. Verify detectedEcosystems includes node, python, go, rust from level 1-2 subdirs
+    expect(mainWt?.detectedEcosystems).toEqual(
+      expect.arrayContaining(['node', 'python', 'go', 'rust']),
+    )
+
+    // 2. Verify scanAllAdapterLinks finds external links and ignores intra-worktree link
+    const allLinks = await scanAllAdapterLinks(snapshot.worktrees, wsConfig)
+    const mainLinks = allLinks.filter((l) => l.sourceWorktreeId === mainWt!.id)
+    const pkgNames = mainLinks.map((l) => l.packageName)
+    expect(pkgNames).toContain('@acme/shared')
+    expect(pkgNames).toContain('example.com/proto')
+    expect(pkgNames).toContain('proto-rs')
+    expect(pkgNames).not.toContain('@acme/internal-ui')
+
+    // Verify subdirectory manifestFile relative paths
+    const goLink = mainLinks.find((l) => l.packageName === 'example.com/proto')
+    expect(goLink?.manifestFile).toBe('services/billing-go/go.mod')
+
+    // 3. Verify SHARED_ENV_DIRTY triggers for monorepo-feat sharing frontend/node_modules
+    const featWt = snapshot.worktrees.find((w) => w.worktreePath === monorepoFeat)
+    expect(featWt).toBeDefined()
+    const sharedEnvWarn = snapshot.warnings.find(
+      (w) => w.type === 'SHARED_ENV_DIRTY' && w.affectedWorktreeIds.includes(featWt!.id),
+    )
+    expect(sharedEnvWarn).toBeDefined()
+    expect(sharedEnvWarn?.message).toContain('frontend/node_modules')
+  })
+})
