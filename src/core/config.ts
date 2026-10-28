@@ -75,7 +75,7 @@ const BanyanConfigSchema = z.object({
   defaultWorkspace: z.string(),
   theme: ThemeEnum.optional(),
   lang: LocaleEnum.optional(),
-  workspaces: z.record(WorkspaceConfigSchema),
+  workspaces: z.record(z.string(), WorkspaceConfigSchema),
 })
 
 export function expandTilde(filePath: string): string {
